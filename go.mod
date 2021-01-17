@@ -17,7 +17,7 @@ require (
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/gogo/protobuf v1.2.0 // indirect
 	github.com/golang/protobuf v1.3.3 // indirect
-	github.com/google/uuid v1.1.2
+	github.com/google/uuid v1.1.4
 	github.com/gorilla/context v1.1.1 // indirect
 	github.com/gorilla/mux v1.6.2 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
@@ -29,7 +29,7 @@ require (
 	github.com/opencontainers/runc v0.1.1 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.2.0 // indirect
-	github.com/stretchr/testify v1.6.1
+	github.com/stretchr/testify v1.7.0
 	golang.org/x/sys v0.0.0-20200116001909-b77594299b42
 	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/time v0.0.0-20181108054448-85acf8d2951c // indirect
