@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,6 +26,7 @@ import (
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
+	"github.com/magiconair/properties"
 	"github.com/moby/term"
 	"github.com/pkg/errors"
 
@@ -157,7 +158,7 @@ func (c *DockerContainer) SessionID() string {
 // Start will start an already created container
 func (c *DockerContainer) Start(ctx context.Context) error {
 	shortID := c.ID[:12]
-	log.Printf("Starting container id: %s image: %s", shortID, c.Image)
+	Logger.Printf("Starting container id: %s image: %s", shortID, c.Image)
 
 	if err := c.provider.client.ContainerStart(ctx, c.ID, types.ContainerStartOptions{}); err != nil {
 		return err
@@ -165,12 +166,12 @@ func (c *DockerContainer) Start(ctx context.Context) error {
 
 	// if a Wait Strategy has been specified, wait before returning
 	if c.WaitingFor != nil {
-		log.Printf("Waiting for container id %s image: %s", shortID, c.Image)
+		Logger.Printf("Waiting for container id %s image: %s", shortID, c.Image)
 		if err := c.WaitingFor.WaitUntilReady(ctx, c); err != nil {
 			return err
 		}
 	}
-	log.Printf("Container is ready id: %s image: %s", shortID, c.Image)
+	Logger.Printf("Container is ready id: %s image: %s", shortID, c.Image)
 
 	return nil
 }
@@ -188,6 +189,9 @@ func (c *DockerContainer) Terminate(ctx context.Context) error {
 	})
 
 	if err == nil {
+		if err := c.provider.client.Close(); err != nil {
+			return err
+		}
 		c.sessionID = uuid.UUID{}
 	}
 
@@ -449,7 +453,9 @@ func (c *DockerContainer) StartLogProducer(ctx context.Context) error {
 				}
 				logType := h[0]
 				if logType > 2 {
-					panic(fmt.Sprintf("received invalid log type: %d", logType))
+					fmt.Fprintf(os.Stderr, fmt.Sprintf("received invalid log type: %d", logType))
+					// sometimes docker returns logType = 3 which is an undocumented log type, so treat it as stdout
+					logType = 1
 				}
 
 				// a map of the log type --> int representation in the header, notice the first is blank, this is stdin, but the go docker client doesn't allow following that in logs
@@ -510,17 +516,74 @@ type DockerProvider struct {
 
 var _ ContainerProvider = (*DockerProvider)(nil)
 
+// or through Decode
+type TestContainersConfig struct {
+	Host      string `properties:"docker.host,default="`
+	TLSVerify int    `properties:"docker.tls.verify,default=0"`
+	CertPath  string `properties:"docker.cert.path,default="`
+}
+
 // NewDockerProvider creates a Docker provider with the EnvClient
 func NewDockerProvider() (*DockerProvider, error) {
-	client, err := client.NewEnvClient()
+	tcConfig := readTCPropsFile()
+	host := tcConfig.Host
+
+	opts := []client.Opt{client.FromEnv}
+	if host != "" {
+		opts = append(opts, client.WithHost(host))
+
+		// for further informacion, read https://docs.docker.com/engine/security/protect-access/
+		if tcConfig.TLSVerify == 1 {
+			cacertPath := path.Join(tcConfig.CertPath, "ca.pem")
+			certPath := path.Join(tcConfig.CertPath, "cert.pem")
+			keyPath := path.Join(tcConfig.CertPath, "key.pem")
+
+			opts = append(opts, client.WithTLSClientConfig(cacertPath, certPath, keyPath))
+		}
+	}
+
+	c, err := client.NewClientWithOpts(opts...)
 	if err != nil {
 		return nil, err
 	}
-	client.NegotiateAPIVersion(context.Background())
+
+	_, err = c.Ping(context.TODO())
+	if err != nil {
+		// fallback to environment
+		c, err = client.NewClientWithOpts(client.FromEnv)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	c.NegotiateAPIVersion(context.Background())
 	p := &DockerProvider{
-		client: client,
+		client: c,
 	}
 	return p, nil
+}
+
+// readTCPropsFile reads from testcontainers properties file, if it exists
+func readTCPropsFile() TestContainersConfig {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return TestContainersConfig{}
+	}
+
+	tcProp := path.Join(home, ".testcontainers.properties")
+	// init from a file
+	properties, err := properties.LoadFile(tcProp, properties.UTF8)
+	if err != nil {
+		return TestContainersConfig{}
+	}
+
+	var cfg TestContainersConfig
+	if err := properties.Decode(&cfg); err != nil {
+		fmt.Printf("invalid testcontainers properties file, returning an empty Testcontainers configuration: %v\n", err)
+		return TestContainersConfig{}
+	}
+
+	return cfg
 }
 
 // BuildImage will build and image from context and Dockerfile, then return the tag
@@ -675,18 +738,19 @@ func (p *DockerProvider) CreateContainer(ctx context.Context, req ContainerReque
 		Labels:       req.Labels,
 		Cmd:          req.Cmd,
 		Hostname:     req.Hostname,
+		User:         req.User,
 	}
 
 	// prepare mounts
 	mounts := []mount.Mount{}
-	for hostPath, innerPath := range req.BindMounts {
+	for innerPath, hostPath := range req.BindMounts {
 		mounts = append(mounts, mount.Mount{
 			Type:   mount.TypeBind,
 			Source: hostPath,
 			Target: innerPath,
 		})
 	}
-	for volumeName, innerPath := range req.VolumeMounts {
+	for innerPath, volumeName := range req.VolumeMounts {
 		mounts = append(mounts, mount.Mount{
 			Type:   mount.TypeVolume,
 			Source: volumeName,
@@ -777,7 +841,7 @@ func (p *DockerProvider) attemptToPullImage(ctx context.Context, tag string, pul
 			if _, ok := err.(errdefs.ErrNotFound); ok {
 				return backoff.Permanent(err)
 			}
-			log.Printf("Failed to pull image: %s, will retry", err)
+			Logger.Printf("Failed to pull image: %s, will retry", err)
 			return err
 		}
 		return nil

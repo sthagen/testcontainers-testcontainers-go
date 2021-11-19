@@ -3,6 +3,8 @@ package testcontainers
 import (
 	"context"
 	"io"
+	"log"
+	"os"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -13,6 +15,9 @@ import (
 
 	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+// Logger is the default log instance
+var Logger = log.New(os.Stderr, "", log.LstdFlags)
 
 // DeprecatedContainer shows methods that were supported before, but are now deprecated
 // Deprecated: Use Container
@@ -93,6 +98,7 @@ type ContainerRequest struct {
 	Privileged      bool                // for starting privileged container
 	Networks        []string            // for specifying network names
 	NetworkAliases  map[string][]string // for specifying network aliases
+	User            string              // for specifying uid:gid
 	SkipReaper      bool                // indicates whether we skip setting up a reaper for this
 	ReaperImage     string              // alternative reaper image
 	AutoRemove      bool                // if set to true, the container will be removed from the host when stopped

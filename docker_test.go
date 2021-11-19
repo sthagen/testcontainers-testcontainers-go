@@ -5,16 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Flaque/filet"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/docker/docker/errdefs"
 
@@ -1185,6 +1189,127 @@ func TestEntrypoint(t *testing.T) {
 	defer c.Terminate(ctx)
 }
 
+func TestReadTCPropsFile(t *testing.T) {
+	t.Run("HOME is not set", func(t *testing.T) {
+		oldHome := os.Getenv("HOME")
+		os.Unsetenv("HOME")
+		defer func() {
+			os.Setenv("HOME", oldHome)
+		}()
+
+		config := readTCPropsFile()
+
+		assert.Empty(t, config, "TC props file should not exist")
+	})
+
+	t.Run("HOME does not contain TC props file", func(t *testing.T) {
+		oldHome := os.Getenv("HOME")
+		tmpDir := filet.TmpDir(t, "")
+		os.Setenv("HOME", tmpDir)
+		defer func() {
+			os.Setenv("HOME", oldHome)
+			filet.CleanUp(t)
+		}()
+
+		config := readTCPropsFile()
+
+		assert.Empty(t, config, "TC props file should not exist")
+	})
+
+	t.Run("HOME contains TC properties file", func(t *testing.T) {
+		oldHome := os.Getenv("HOME")
+
+		tests := []struct {
+			content           string
+			expectedHost      string
+			expectedTLSVerify int
+			expectedCertPath  string
+		}{
+			{
+				"docker.host = tcp://127.0.0.1:33293",
+				"tcp://127.0.0.1:33293",
+				0,
+				"",
+			},
+			{
+				"docker.host = tcp://127.0.0.1:33293",
+				"tcp://127.0.0.1:33293",
+				0,
+				"",
+			},
+			{
+				`docker.host = tcp://127.0.0.1:33293
+	docker.host = tcp://127.0.0.1:4711
+	`,
+				"tcp://127.0.0.1:4711",
+				0,
+				"",
+			},
+			{`docker.host = tcp://127.0.0.1:33293
+	docker.host = tcp://127.0.0.1:4711
+	docker.host = tcp://127.0.0.1:1234
+	docker.tls.verify = 1
+	`,
+				"tcp://127.0.0.1:1234",
+				1,
+				"",
+			},
+			{
+				"",
+				"",
+				0,
+				"",
+			},
+			{
+				`foo = bar
+	docker.host = tcp://127.0.0.1:1234
+			`,
+				"tcp://127.0.0.1:1234",
+				0,
+				"",
+			},
+			{
+				"docker.host=tcp://127.0.0.1:33293",
+				"tcp://127.0.0.1:33293",
+				0,
+				"",
+			},
+			{
+				`#docker.host=tcp://127.0.0.1:33293`,
+				"",
+				0,
+				"",
+			},
+			{
+				`#docker.host = tcp://127.0.0.1:33293
+	docker.host = tcp://127.0.0.1:4711
+	docker.host = tcp://127.0.0.1:1234
+	docker.cert.path=/tmp/certs`,
+				"tcp://127.0.0.1:1234",
+				0,
+				"/tmp/certs",
+			},
+		}
+		for _, tt := range tests {
+			tmpDir := filet.TmpDir(t, "")
+			os.Setenv("HOME", tmpDir)
+
+			defer func() {
+				os.Setenv("HOME", oldHome)
+				filet.CleanUp(t)
+			}()
+
+			_ = filet.File(t, path.Join(tmpDir, ".testcontainers.properties"), tt.content)
+
+			config := readTCPropsFile()
+
+			assert.Equal(t, tt.expectedHost, config.Host, "Hosts do not match")
+			assert.Equal(t, tt.expectedTLSVerify, config.TLSVerify, "TLS verifies do not match")
+			assert.Equal(t, tt.expectedCertPath, config.CertPath, "Cert paths do not match")
+		}
+	})
+}
+
 func ExampleDockerProvider_CreateContainer() {
 	ctx := context.Background()
 	req := ContainerRequest{
@@ -1279,8 +1404,8 @@ func TestContainerCreationWithBindAndVolume(t *testing.T) {
 	bashC, err := GenericContainer(ctx, GenericContainerRequest{
 		ContainerRequest: ContainerRequest{
 			Image:        "bash",
-			BindMounts:   map[string]string{absPath: "/hello.sh"},
-			VolumeMounts: map[string]string{volumeName: "/data"},
+			BindMounts:   map[string]string{"/hello.sh": absPath},
+			VolumeMounts: map[string]string{"/data": volumeName},
 			Cmd:          []string{"bash", "/hello.sh"},
 			WaitingFor:   wait.ForLog("done"),
 		},
@@ -1578,6 +1703,65 @@ func TestContainerWithReaperNetwork(t *testing.T) {
 	assert.Equal(t, 2, len(cnt.NetworkSettings.Networks))
 	assert.NotNil(t, cnt.NetworkSettings.Networks[networks[0]])
 	assert.NotNil(t, cnt.NetworkSettings.Networks[networks[1]])
+}
+
+func TestContainerWithUserID(t *testing.T) {
+	ctx := context.Background()
+	req := ContainerRequest{
+		Image:      "alpine:latest",
+		User:       "60125",
+		Cmd:        []string{"sh", "-c", "id -u"},
+		WaitingFor: wait.ForExit(),
+	}
+	container, err := GenericContainer(ctx, GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer container.Terminate(ctx)
+
+	r, err := container.Logs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual := regexp.MustCompile(`\D+`).ReplaceAllString(string(b), "")
+	assert.Equal(t, req.User, actual)
+}
+
+func TestContainerWithNoUserID(t *testing.T) {
+	ctx := context.Background()
+	req := ContainerRequest{
+		Image:      "alpine:latest",
+		Cmd:        []string{"sh", "-c", "id -u"},
+		WaitingFor: wait.ForExit(),
+	}
+	container, err := GenericContainer(ctx, GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer container.Terminate(ctx)
+
+	r, err := container.Logs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual := regexp.MustCompile(`\D+`).ReplaceAllString(string(b), "")
+	assert.Equal(t, "0", actual)
 }
 
 func TestGetGatewayIP(t *testing.T) {
