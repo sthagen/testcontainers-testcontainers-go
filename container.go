@@ -51,7 +51,7 @@ type Container interface {
 	State(context.Context) (*types.ContainerState, error)        // returns container's running state
 	Networks(context.Context) ([]string, error)                  // get container networks
 	NetworkAliases(context.Context) (map[string][]string, error) // get container network aliases for a network
-	Exec(ctx context.Context, cmd []string) (int, error)
+	Exec(ctx context.Context, cmd []string) (int, io.Reader, error)
 	ContainerIP(context.Context) (string, error) // get container ip
 	CopyToContainer(ctx context.Context, fileContent []byte, containerFilePath string, fileMode int64) error
 	CopyFileToContainer(ctx context.Context, hostFilePath string, containerFilePath string, fileMode int64) error
@@ -92,6 +92,7 @@ type ContainerRequest struct {
 	WaitingFor      wait.Strategy
 	Name            string // for specifying container name
 	Hostname        string
+	ExtraHosts      []string
 	Privileged      bool                // for starting privileged container
 	Networks        []string            // for specifying network names
 	NetworkAliases  map[string][]string // for specifying network aliases
