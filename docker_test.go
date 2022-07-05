@@ -1239,49 +1239,80 @@ func TestEntrypoint(t *testing.T) {
 
 func TestReadTCPropsFile(t *testing.T) {
 	t.Run("HOME is not set", func(t *testing.T) {
-		tmpDir := fs.NewDir(t, os.TempDir())
-		env.Patch(t, "HOME", tmpDir.Path())
+		env.Patch(t, "HOME", "")
 
-		config := readTCPropsFile()
+		config := configureTC()
 
 		assert.Empty(t, config, "TC props file should not exist")
+	})
+
+	t.Run("HOME is not set - TESTCONTAINERS_ env is set", func(t *testing.T) {
+		env.Patch(t, "HOME", "")
+		env.Patch(t, "TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED", "true")
+
+		config := configureTC()
+
+		expected := TestContainersConfig{}
+		expected.RyukPrivileged = true
+
+		assert.Equal(t, expected, config)
 	})
 
 	t.Run("HOME does not contain TC props file", func(t *testing.T) {
 		tmpDir := fs.NewDir(t, os.TempDir())
 		env.Patch(t, "HOME", tmpDir.Path())
 
-		config := readTCPropsFile()
+		config := configureTC()
 
 		assert.Empty(t, config, "TC props file should not exist")
 	})
 
+	t.Run("HOME does not contain TC props file - TESTCONTAINERS_ env is set", func(t *testing.T) {
+		tmpDir := fs.NewDir(t, os.TempDir())
+		env.Patch(t, "HOME", tmpDir.Path())
+		env.Patch(t, "TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED", "true")
+
+		config := configureTC()
+		expected := TestContainersConfig{}
+		expected.RyukPrivileged = true
+
+		assert.Equal(t, expected, config)
+	})
+
 	t.Run("HOME contains TC properties file", func(t *testing.T) {
 		tests := []struct {
-			content           string
-			expectedHost      string
-			expectedTLSVerify int
-			expectedCertPath  string
+			content  string
+			env      map[string]string
+			expected TestContainersConfig
 		}{
 			{
 				"docker.host = tcp://127.0.0.1:33293",
-				"tcp://127.0.0.1:33293",
-				0,
-				"",
+				map[string]string{},
+				TestContainersConfig{
+					Host:      "tcp://127.0.0.1:33293",
+					TLSVerify: 0,
+					CertPath:  "",
+				},
 			},
 			{
 				"docker.host = tcp://127.0.0.1:33293",
-				"tcp://127.0.0.1:33293",
-				0,
-				"",
+				map[string]string{},
+				TestContainersConfig{
+					Host:      "tcp://127.0.0.1:33293",
+					TLSVerify: 0,
+					CertPath:  "",
+				},
 			},
 			{
 				`docker.host = tcp://127.0.0.1:33293
 	docker.host = tcp://127.0.0.1:4711
 	`,
-				"tcp://127.0.0.1:4711",
-				0,
-				"",
+				map[string]string{},
+				TestContainersConfig{
+					Host:      "tcp://127.0.0.1:4711",
+					TLSVerify: 0,
+					CertPath:  "",
+				},
 			},
 			{
 				`docker.host = tcp://127.0.0.1:33293
@@ -1289,59 +1320,176 @@ func TestReadTCPropsFile(t *testing.T) {
 	docker.host = tcp://127.0.0.1:1234
 	docker.tls.verify = 1
 	`,
-				"tcp://127.0.0.1:1234",
-				1,
-				"",
+				map[string]string{},
+				TestContainersConfig{
+					Host:      "tcp://127.0.0.1:1234",
+					TLSVerify: 1,
+					CertPath:  "",
+				},
 			},
 			{
 				"",
-				"",
-				0,
-				"",
+				map[string]string{},
+				TestContainersConfig{
+					Host:      "",
+					TLSVerify: 0,
+					CertPath:  "",
+				},
 			},
 			{
 				`foo = bar
 	docker.host = tcp://127.0.0.1:1234
 			`,
-				"tcp://127.0.0.1:1234",
-				0,
-				"",
+				map[string]string{},
+				TestContainersConfig{
+					Host:      "tcp://127.0.0.1:1234",
+					TLSVerify: 0,
+					CertPath:  "",
+				},
 			},
 			{
 				"docker.host=tcp://127.0.0.1:33293",
-				"tcp://127.0.0.1:33293",
-				0,
-				"",
+				map[string]string{},
+				TestContainersConfig{
+					Host:      "tcp://127.0.0.1:33293",
+					TLSVerify: 0,
+					CertPath:  "",
+				},
 			},
 			{
 				`#docker.host=tcp://127.0.0.1:33293`,
-				"",
-				0,
-				"",
+				map[string]string{},
+				TestContainersConfig{
+					Host:      "",
+					TLSVerify: 0,
+					CertPath:  "",
+				},
 			},
 			{
 				`#docker.host = tcp://127.0.0.1:33293
 	docker.host = tcp://127.0.0.1:4711
 	docker.host = tcp://127.0.0.1:1234
 	docker.cert.path=/tmp/certs`,
-				"tcp://127.0.0.1:1234",
-				0,
-				"/tmp/certs",
+				map[string]string{},
+				TestContainersConfig{
+					Host:      "tcp://127.0.0.1:1234",
+					TLSVerify: 0,
+					CertPath:  "/tmp/certs",
+				},
+			},
+			{
+				`ryuk.container.privileged=true`,
+				map[string]string{},
+				TestContainersConfig{
+					Host:           "",
+					TLSVerify:      0,
+					CertPath:       "",
+					RyukPrivileged: true,
+				},
+			},
+			{
+				``,
+				map[string]string{
+					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "true",
+				},
+				TestContainersConfig{
+					Host:           "",
+					TLSVerify:      0,
+					CertPath:       "",
+					RyukPrivileged: true,
+				},
+			},
+			{
+				`ryuk.container.privileged=true`,
+				map[string]string{
+					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "true",
+				},
+				TestContainersConfig{
+					Host:           "",
+					TLSVerify:      0,
+					CertPath:       "",
+					RyukPrivileged: true,
+				},
+			},
+			{
+				`ryuk.container.privileged=false`,
+				map[string]string{
+					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "true",
+				},
+				TestContainersConfig{
+					Host:           "",
+					TLSVerify:      0,
+					CertPath:       "",
+					RyukPrivileged: true,
+				},
+			},
+			{
+				`ryuk.container.privileged=true`,
+				map[string]string{
+					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "false",
+				},
+				TestContainersConfig{
+					Host:           "",
+					TLSVerify:      0,
+					CertPath:       "",
+					RyukPrivileged: false,
+				},
+			},
+			{
+				`ryuk.container.privileged=false`,
+				map[string]string{
+					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "false",
+				},
+				TestContainersConfig{
+					Host:           "",
+					TLSVerify:      0,
+					CertPath:       "",
+					RyukPrivileged: false,
+				},
+			},
+			{
+				`ryuk.container.privileged=false
+				docker.tls.verify = ERROR`,
+				map[string]string{
+					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "true",
+				},
+				TestContainersConfig{
+					Host:           "",
+					TLSVerify:      0,
+					CertPath:       "",
+					RyukPrivileged: true,
+				},
+			},
+			{
+				`ryuk.container.privileged=false`,
+				map[string]string{
+					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "foo",
+				},
+				TestContainersConfig{
+					Host:           "",
+					TLSVerify:      0,
+					CertPath:       "",
+					RyukPrivileged: false,
+				},
 			},
 		}
-		for _, tt := range tests {
-			tmpDir := fs.NewDir(t, os.TempDir())
-			env.Patch(t, "HOME", tmpDir.Path())
-			if err := ioutil.WriteFile(tmpDir.Join(".testcontainers.properties"), []byte(tt.content), 0o600); err != nil {
-				t.Errorf("Failed to create the file: %v", err)
-				return
-			}
+		for i, tt := range tests {
+			t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
+				tmpDir := fs.NewDir(t, os.TempDir())
+				env.Patch(t, "HOME", tmpDir.Path())
+				for k, v := range tt.env {
+					env.Patch(t, k, v)
+				}
+				if err := ioutil.WriteFile(tmpDir.Join(".testcontainers.properties"), []byte(tt.content), 0o600); err != nil {
+					t.Errorf("Failed to create the file: %v", err)
+					return
+				}
 
-			config := readTCPropsFile()
+				config := configureTC()
 
-			assert.Equal(t, tt.expectedHost, config.Host, "Hosts do not match")
-			assert.Equal(t, tt.expectedTLSVerify, config.TLSVerify, "TLS verifies do not match")
-			assert.Equal(t, tt.expectedCertPath, config.CertPath, "Cert paths do not match")
+				assert.Equal(t, tt.expected, config, "Configuration doesn't not match")
+
+			})
 		}
 	})
 }
@@ -1665,6 +1813,78 @@ func TestDockerContainerCopyFileToContainer(t *testing.T) {
 	}
 	if c != 0 {
 		t.Fatalf("File %s should exist, expected return code 0, got %v", copiedFileName, c)
+	}
+}
+
+func TestDockerCreateContainerWithFiles(t *testing.T) {
+	ctx := context.Background()
+	hostFileName := "./testresources/hello.sh"
+	copiedFileName := "/hello_copy.sh"
+	tests := []struct {
+		name   string
+		files  []ContainerFile
+		errMsg string
+	}{
+		{
+			name: "success copy",
+			files: []ContainerFile{
+				{
+					HostFilePath:      hostFileName,
+					ContainerFilePath: copiedFileName,
+					FileMode:          700,
+				},
+			},
+		},
+		{
+			name: "host file not found",
+			files: []ContainerFile{
+				{
+					HostFilePath:      hostFileName + "123",
+					ContainerFilePath: copiedFileName,
+					FileMode:          700,
+				},
+			},
+			errMsg: "can't copy " +
+				"./testresources/hello.sh123 to container: open " +
+				"./testresources/hello.sh123: no such file or directory: " +
+				"failed to create container",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			nginxC, err := GenericContainer(ctx, GenericContainerRequest{
+				ContainerRequest: ContainerRequest{
+					Image:        "nginx:1.17.6",
+					ExposedPorts: []string{"80/tcp"},
+					WaitingFor:   wait.ForListeningPort("80/tcp"),
+					Files:        tc.files,
+				},
+				Started: false,
+			})
+
+			if tc.errMsg == "" {
+				for _, f := range tc.files {
+					require.NoError(t, err)
+
+					hostFileData, err := ioutil.ReadFile(f.HostFilePath)
+					require.NoError(t, err)
+
+					fd, err := nginxC.CopyFileFromContainer(ctx, f.ContainerFilePath)
+					require.NoError(t, err)
+					defer fd.Close()
+					containerFileData, err := ioutil.ReadAll(fd)
+					require.NoError(t, err)
+
+					require.Equal(t, hostFileData, containerFileData)
+
+				}
+			} else {
+				require.Error(t, err)
+				require.Equal(t, tc.errMsg, err.Error())
+			}
+
+		})
 	}
 }
 

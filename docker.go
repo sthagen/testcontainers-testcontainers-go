@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/filters"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd/platforms"
 	"github.com/docker/docker/api/types"
@@ -54,6 +56,7 @@ type DockerContainer struct {
 	WaitingFor wait.Strategy
 	Image      string
 
+	isRunning         bool
 	imageWasBuilt     bool
 	provider          *DockerProvider
 	sessionID         uuid.UUID
@@ -67,6 +70,10 @@ type DockerContainer struct {
 
 func (c *DockerContainer) GetContainerID() string {
 	return c.ID
+}
+
+func (c *DockerContainer) IsRunning() bool {
+	return c.isRunning
 }
 
 // Endpoint gets proto://host:port string for the first exposed port
@@ -180,7 +187,7 @@ func (c *DockerContainer) Start(ctx context.Context) error {
 		}
 	}
 	c.logger.Printf("Container is ready id: %s image: %s", shortID, c.Image)
-
+	c.isRunning = true
 	return nil
 }
 
@@ -202,7 +209,7 @@ func (c *DockerContainer) Stop(ctx context.Context, timeout *time.Duration) erro
 	}
 
 	c.logger.Printf("Container is stopped id: %s image: %s", shortID, c.Image)
-
+	c.isRunning = false
 	return nil
 }
 
@@ -236,6 +243,7 @@ func (c *DockerContainer) Terminate(ctx context.Context) error {
 	}
 
 	c.sessionID = uuid.UUID{}
+	c.isRunning = false
 	return nil
 }
 
@@ -663,7 +671,8 @@ func WithDefaultBridgeNetwork(bridgeNetworkName string) DockerProviderOption {
 }
 
 func NewDockerClient() (cli *client.Client, host string, tcConfig TestContainersConfig, err error) {
-	tcConfig = readTCPropsFile()
+	tcConfig = configureTC()
+
 	host = tcConfig.Host
 
 	opts := []client.Opt{client.FromEnv}
@@ -732,27 +741,38 @@ func NewDockerProvider(provOpts ...DockerProviderOption) (*DockerProvider, error
 	return p, nil
 }
 
-// readTCPropsFile reads from testcontainers properties file, if it exists
-func readTCPropsFile() TestContainersConfig {
+// configureTC reads from testcontainers properties file, if it exists
+// it is possible that certain values get overridden when set as environment variables
+func configureTC() TestContainersConfig {
+	config := TestContainersConfig{}
+
+	applyEnvironmentConfiguration := func(config TestContainersConfig) TestContainersConfig {
+		ryukPrivilegedEnv := os.Getenv("TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED")
+		if ryukPrivilegedEnv != "" {
+			config.RyukPrivileged = ryukPrivilegedEnv == "true"
+		}
+
+		return config
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return TestContainersConfig{}
+		return applyEnvironmentConfiguration(config)
 	}
 
 	tcProp := filepath.Join(home, ".testcontainers.properties")
 	// init from a file
 	properties, err := properties.LoadFile(tcProp, properties.UTF8)
 	if err != nil {
-		return TestContainersConfig{}
+		return applyEnvironmentConfiguration(config)
 	}
 
-	var cfg TestContainersConfig
-	if err := properties.Decode(&cfg); err != nil {
+	if err := properties.Decode(&config); err != nil {
 		fmt.Printf("invalid testcontainers properties file, returning an empty Testcontainers configuration: %v\n", err)
-		return TestContainersConfig{}
+		return applyEnvironmentConfiguration(config)
 	}
 
-	return cfg
+	return applyEnvironmentConfiguration(config)
 }
 
 // BuildImage will build and image from context and Dockerfile, then return the tag
@@ -1008,7 +1028,69 @@ func (p *DockerProvider) CreateContainer(ctx context.Context, req ContainerReque
 		logger:            p.Logger,
 	}
 
+	for _, f := range req.Files {
+		err := c.CopyFileToContainer(ctx, f.HostFilePath, f.ContainerFilePath, f.FileMode)
+		if err != nil {
+			return nil, fmt.Errorf("can't copy %s to container: %w", f.HostFilePath, err)
+		}
+	}
+
 	return c, nil
+}
+
+func (p *DockerProvider) findContainerByName(ctx context.Context, name string) (*types.Container, error) {
+	if name == "" {
+		return nil, nil
+	}
+	filter := filters.NewArgs(filters.KeyValuePair{
+		Key:   "name",
+		Value: name,
+	})
+	containers, err := p.client.ContainerList(ctx, types.ContainerListOptions{Filters: filter})
+	if err != nil {
+		return nil, err
+	}
+	if len(containers) > 0 {
+		return &containers[0], nil
+	}
+	return nil, nil
+}
+
+func (p *DockerProvider) ReuseOrCreateContainer(ctx context.Context, req ContainerRequest) (Container, error) {
+	c, err := p.findContainerByName(ctx, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	if c == nil {
+		return p.CreateContainer(ctx, req)
+	}
+
+	sessionID := uuid.New()
+	var termSignal chan bool
+	if !req.SkipReaper {
+		r, err := NewReaper(ctx, sessionID.String(), p, req.ReaperImage)
+		if err != nil {
+			return nil, fmt.Errorf("%w: creating reaper failed", err)
+		}
+		termSignal, err = r.Connect()
+		if err != nil {
+			return nil, fmt.Errorf("%w: connecting to reaper failed", err)
+		}
+	}
+	dc := &DockerContainer{
+		ID:                c.ID,
+		WaitingFor:        req.WaitingFor,
+		Image:             c.Image,
+		sessionID:         sessionID,
+		provider:          p,
+		terminationSignal: termSignal,
+		skipReaper:        req.SkipReaper,
+		stopProducer:      make(chan bool),
+		logger:            p.Logger,
+		isRunning:         c.State == "running",
+	}
+	return dc, nil
+
 }
 
 // attemptToPullImage tries to pull the image while respecting the ctx cancellations.

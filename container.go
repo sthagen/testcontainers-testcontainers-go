@@ -26,8 +26,9 @@ type DeprecatedContainer interface {
 
 // ContainerProvider allows the creation of containers on an arbitrary system
 type ContainerProvider interface {
-	CreateContainer(context.Context, ContainerRequest) (Container, error) // create a container without starting it
-	RunContainer(context.Context, ContainerRequest) (Container, error)    // create a container and start it
+	CreateContainer(context.Context, ContainerRequest) (Container, error)        // create a container without starting it
+	ReuseOrCreateContainer(context.Context, ContainerRequest) (Container, error) // reuses a container if it exists or creates a container without starting
+	RunContainer(context.Context, ContainerRequest) (Container, error)           // create a container and start it
 	Health(context.Context) error
 	Config() TestContainersConfig
 }
@@ -41,10 +42,11 @@ type Container interface {
 	MappedPort(context.Context, nat.Port) (nat.Port, error)         // get externally mapped port for a container port
 	Ports(context.Context) (nat.PortMap, error)                     // get all exposed ports
 	SessionID() string                                              // get session id
-	Start(context.Context) error                                    // start the container
-	Stop(context.Context, *time.Duration) error                     // stop the container
-	Terminate(context.Context) error                                // terminate the container
-	Logs(context.Context) (io.ReadCloser, error)                    // Get logs of the container
+	IsRunning() bool
+	Start(context.Context) error                 // start the container
+	Stop(context.Context, *time.Duration) error  // stop the container
+	Terminate(context.Context) error             // terminate the container
+	Logs(context.Context) (io.ReadCloser, error) // Get logs of the container
 	FollowOutput(LogConsumer)
 	StartLogProducer(context.Context) error
 	StopLogProducer() error
@@ -78,6 +80,12 @@ type FromDockerfile struct {
 	PrintBuildLog  bool               // enable user to print build log
 }
 
+type ContainerFile struct {
+	HostFilePath      string
+	ContainerFilePath string
+	FileMode          int64
+}
+
 // ContainerRequest represents the parameters used to get a running container
 type ContainerRequest struct {
 	FromDockerfile
@@ -99,12 +107,13 @@ type ContainerRequest struct {
 	NetworkAliases  map[string][]string // for specifying network aliases
 	NetworkMode     container.NetworkMode
 	Resources       container.Resources
-	User            string // for specifying uid:gid
-	SkipReaper      bool   // indicates whether we skip setting up a reaper for this
-	ReaperImage     string // alternative reaper image
-	AutoRemove      bool   // if set to true, the container will be removed from the host when stopped
-	AlwaysPullImage bool   // Always pull image
-	ImagePlatform   string // ImagePlatform describes the platform which the image runs on.
+	Files           []ContainerFile // files which will be copied when container starts
+	User            string          // for specifying uid:gid
+	SkipReaper      bool            // indicates whether we skip setting up a reaper for this
+	ReaperImage     string          // alternative reaper image
+	AutoRemove      bool            // if set to true, the container will be removed from the host when stopped
+	AlwaysPullImage bool            // Always pull image
+	ImagePlatform   string          // ImagePlatform describes the platform which the image runs on.
 	Binds           []string
 	ShmSize         int64 // Amount of memory shared with the host (in bytes)
 }
