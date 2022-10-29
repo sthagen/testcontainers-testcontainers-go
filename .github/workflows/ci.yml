@@ -54,14 +54,6 @@ jobs:
         if: ${{ matrix.platform == 'ubuntu-latest' }}
         run: make test-unit
 
-        # only report code coverage on linux
-      - name: Upload coverage report
-        if: ${{ matrix.platform == 'ubuntu-latest' }}
-        uses: codecov/codecov-action@81cd2dc8148241f03f5839d295e000b8f761e378
-        with:
-          files: ./cover.txt
-          name: testcontainers-go-${{ matrix.go-version }}
-
       - name: modTidy e2e tests
         if: ${{ matrix.platform == 'ubuntu-latest' }}
         run: make -C e2e tools-tidy
@@ -75,7 +67,7 @@ jobs:
           ./scripts/check_environment.sh
 
       - name: Test Summary
-        uses: test-summary/action@77bb5a9f9c572416423f9a157cbf1159c1e75a4c
+        uses: test-summary/action@4ee9ece4bca777a38f05c8fc578ac2007fe266f7
         with:
           paths: "**/TEST-*.xml"
         if: always()

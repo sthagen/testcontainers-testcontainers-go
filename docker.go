@@ -207,7 +207,14 @@ func (c *DockerContainer) Stop(ctx context.Context, timeout *time.Duration) erro
 	shortID := c.ID[:12]
 	c.logger.Printf("Stopping container id: %s image: %s", shortID, c.Image)
 
-	if err := c.provider.client.ContainerStop(ctx, c.ID, timeout); err != nil {
+	var options container.StopOptions
+
+	if timeout != nil {
+		timeoutSeconds := int(timeout.Seconds())
+		options.Timeout = &timeoutSeconds
+	}
+
+	if err := c.provider.client.ContainerStop(ctx, c.ID, options); err != nil {
 		return err
 	}
 
@@ -663,7 +670,7 @@ func (n *DockerNetwork) Remove(ctx context.Context) error {
 // DockerProvider implements the ContainerProvider interface
 type DockerProvider struct {
 	*DockerProviderOptions
-	client    *client.Client
+	client    client.APIClient
 	host      string
 	hostCache string
 	config    TestContainersConfig
@@ -797,12 +804,14 @@ func NewDockerProvider(provOpts ...DockerProviderOption) (*DockerProvider, error
 	}
 
 	// log docker server info only once
-	logOnce.Do(p.logDockerServerInfo)
+	logOnce.Do(func() {
+		logDockerServerInfo(context.Background(), p.client, p.Logger)
+	})
 
 	return p, nil
 }
 
-func (p *DockerProvider) logDockerServerInfo() {
+func logDockerServerInfo(ctx context.Context, client client.APIClient, logger Logging) {
 	infoMessage := `%v - Connected to docker: 
   Server Version: %v
   API Version: %v
@@ -810,13 +819,14 @@ func (p *DockerProvider) logDockerServerInfo() {
   Total Memory: %v MB
 `
 
-	info, err := p.client.Info(context.Background())
+	info, err := client.Info(ctx)
 	if err != nil {
-		p.Logger.Printf("failed getting information about docker server: %s", err)
+		logger.Printf("failed getting information about docker server: %s", err)
+		return
 	}
 
-	p.Logger.Printf(infoMessage, packagePath,
-		info.ServerVersion, p.client.ClientVersion(),
+	logger.Printf(infoMessage, packagePath,
+		info.ServerVersion, client.ClientVersion(),
 		info.OperatingSystem, info.MemTotal/1024/1024)
 }
 
@@ -1140,10 +1150,7 @@ func (p *DockerProvider) findContainerByName(ctx context.Context, name string) (
 	}
 
 	// Note that, 'name' filter will use regex to find the containers
-	filter := filters.NewArgs(filters.KeyValuePair{
-		Key:   "name",
-		Value: fmt.Sprintf("^%s$", name),
-	})
+	filter := filters.NewArgs(filters.Arg("name", fmt.Sprintf("^%s$", name)))
 	containers, err := p.client.ContainerList(ctx, types.ContainerListOptions{Filters: filter})
 	if err != nil {
 		return nil, err
@@ -1189,8 +1196,8 @@ func (p *DockerProvider) ReuseOrCreateContainer(ctx context.Context, req Contain
 		logger:            p.Logger,
 		isRunning:         c.State == "running",
 	}
-	return dc, nil
 
+	return dc, nil
 }
 
 // attemptToPullImage tries to pull the image while respecting the ctx cancellations.
@@ -1427,7 +1434,7 @@ func getDefaultGatewayIP() (string, error) {
 	return ip, nil
 }
 
-func (p *DockerProvider) getDefaultNetwork(ctx context.Context, cli *client.Client) (string, error) {
+func (p *DockerProvider) getDefaultNetwork(ctx context.Context, cli client.APIClient) (string, error) {
 	// Get list of available networks
 	networkResources, err := cli.NetworkList(ctx, types.NetworkListOptions{})
 	if err != nil {
