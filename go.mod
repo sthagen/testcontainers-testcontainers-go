@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/cenkalti/backoff/v4 v4.1.3
-	github.com/compose-spec/compose-go v1.6.0
+	github.com/compose-spec/compose-go v1.7.1
 	github.com/containerd/containerd v1.6.8
 	github.com/docker/cli v20.10.19+incompatible
 	github.com/docker/compose/v2 v2.12.2
@@ -17,7 +17,7 @@ require (
 	github.com/magiconair/properties v1.8.6
 	github.com/moby/term v0.0.0-20220808134915-39b0c02b01ae
 	github.com/opencontainers/image-spec v1.0.3-0.20220303224323-02efb9a75ee1
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.1
 	golang.org/x/sync v0.1.0
 	golang.org/x/sys v0.1.0
 	golang.org/x/text v0.3.7
@@ -59,7 +59,7 @@ require (
 	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/distribution/distribution/v3 v3.0.0-20220907155224-78b9c98c5c31 // indirect
+	github.com/distribution/distribution/v3 v3.0.0-20221103125252-ebfa2a0ac0a9 // indirect
 	github.com/dnephin/pflag v1.0.7 // indirect
 	github.com/docker/buildx v0.9.1 // indirect
 	github.com/docker/distribution v2.8.1+incompatible // indirect
