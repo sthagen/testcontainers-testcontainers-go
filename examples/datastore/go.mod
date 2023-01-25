@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/datastore v1.10.0
 	github.com/testcontainers/testcontainers-go v0.17.0
 	google.golang.org/api v0.105.0
-	google.golang.org/grpc v1.52.0
+	google.golang.org/grpc v1.52.1
 	gotest.tools/gotestsum v1.8.2
 )
 
