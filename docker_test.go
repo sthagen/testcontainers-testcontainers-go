@@ -141,15 +141,17 @@ func TestContainerWithHostNetworkOptions(t *testing.T) {
 	gcr := GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image:       nginxAlpineImage,
-			Privileged:  true,
-			SkipReaper:  true,
-			NetworkMode: "host",
-			Mounts:      Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
+			Image:      nginxAlpineImage,
+			SkipReaper: true,
+			Mounts:     Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
 			ExposedPorts: []string{
 				nginxHighPort,
 			},
+			Privileged: true,
 			WaitingFor: wait.ForListeningPort(nginxHighPort),
+			HostConfigModifier: func(hc *container.HostConfig) {
+				hc.NetworkMode = "host"
+			},
 		},
 		Started: true,
 	}
@@ -209,10 +211,12 @@ func TestContainerWithNetworkModeAndNetworkTogether(t *testing.T) {
 	gcr := GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image:       nginxImage,
-			SkipReaper:  true,
-			NetworkMode: "host",
-			Networks:    []string{"new-network"},
+			Image:      nginxImage,
+			SkipReaper: true,
+			Networks:   []string{"new-network"},
+			HostConfigModifier: func(hc *container.HostConfig) {
+				hc.NetworkMode = "host"
+			},
 		},
 		Started: true,
 	}
@@ -236,11 +240,13 @@ func TestContainerWithHostNetworkOptionsAndWaitStrategy(t *testing.T) {
 	gcr := GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image:       nginxAlpineImage,
-			SkipReaper:  true,
-			NetworkMode: "host",
-			WaitingFor:  wait.ForListeningPort(nginxHighPort),
-			Mounts:      Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
+			Image:      nginxAlpineImage,
+			SkipReaper: true,
+			WaitingFor: wait.ForListeningPort(nginxHighPort),
+			Mounts:     Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
+			HostConfigModifier: func(hc *container.HostConfig) {
+				hc.NetworkMode = "host"
+			},
 		},
 		Started: true,
 	}
@@ -272,11 +278,13 @@ func TestContainerWithHostNetworkAndEndpoint(t *testing.T) {
 	gcr := GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image:       nginxAlpineImage,
-			SkipReaper:  true,
-			NetworkMode: "host",
-			WaitingFor:  wait.ForListeningPort(nginxHighPort),
-			Mounts:      Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
+			Image:      nginxAlpineImage,
+			SkipReaper: true,
+			WaitingFor: wait.ForListeningPort(nginxHighPort),
+			Mounts:     Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
+			HostConfigModifier: func(hc *container.HostConfig) {
+				hc.NetworkMode = "host"
+			},
 		},
 		Started: true,
 	}
@@ -309,11 +317,13 @@ func TestContainerWithHostNetworkAndPortEndpoint(t *testing.T) {
 	gcr := GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image:       nginxAlpineImage,
-			SkipReaper:  true,
-			NetworkMode: "host",
-			WaitingFor:  wait.ForListeningPort(nginxHighPort),
-			Mounts:      Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
+			Image:      nginxAlpineImage,
+			SkipReaper: true,
+			WaitingFor: wait.ForListeningPort(nginxHighPort),
+			Mounts:     Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
+			HostConfigModifier: func(hc *container.HostConfig) {
+				hc.NetworkMode = "host"
+			},
 		},
 		Started: true,
 	}
@@ -2022,18 +2032,20 @@ func TestDockerContainerCopyDirToContainer(t *testing.T) {
 		Started: true,
 	})
 
+	p := filepath.Join(".", "testresources", "Dokerfile")
 	require.NoError(t, err)
 	terminateContainerOnEnd(t, ctx, nginxC)
 
-	err = nginxC.CopyDirToContainer(ctx, "./testresources/Dockerfile", "/tmp/testresources/Dockerfile", 700)
+	err = nginxC.CopyDirToContainer(ctx, p, "/tmp/testresources/Dockerfile", 700)
 	require.Error(t, err) // copying a file using the directory method will raise an error
 
-	err = nginxC.CopyDirToContainer(ctx, "./testresources", "/tmp/testresources", 700)
+	p = filepath.Join(".", "testresources")
+	err = nginxC.CopyDirToContainer(ctx, p, "/tmp/testresources", 700)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	assertExtractedFiles(t, ctx, nginxC, "./testresources", "/tmp/testresources/")
+	assertExtractedFiles(t, ctx, nginxC, p, "/tmp/testresources/")
 }
 
 func TestDockerCreateContainerWithFiles(t *testing.T) {
@@ -2109,15 +2121,27 @@ func TestDockerCreateContainerWithDirs(t *testing.T) {
 	ctx := context.Background()
 	hostDirName := "testresources"
 
+	abs, err := filepath.Abs(filepath.Join(".", hostDirName))
+	assert.Nil(t, err)
+
 	tests := []struct {
 		name     string
 		dir      ContainerFile
 		hasError bool
 	}{
 		{
+			name: "success copy directory with full path",
+			dir: ContainerFile{
+				HostFilePath:      abs,
+				ContainerFilePath: "/tmp/" + hostDirName, // the parent dir must exist
+				FileMode:          700,
+			},
+			hasError: false,
+		},
+		{
 			name: "success copy directory",
 			dir: ContainerFile{
-				HostFilePath:      "./" + hostDirName,
+				HostFilePath:      filepath.Join("./", hostDirName),
 				ContainerFilePath: "/tmp/" + hostDirName, // the parent dir must exist
 				FileMode:          700,
 			},
@@ -2303,8 +2327,10 @@ func TestDockerContainerResources(t *testing.T) {
 			Image:        nginxAlpineImage,
 			ExposedPorts: []string{nginxDefaultPort},
 			WaitingFor:   wait.ForListeningPort(nginxDefaultPort),
-			Resources: container.Resources{
-				Ulimits: expected,
+			HostConfigModifier: func(hc *container.HostConfig) {
+				hc.Resources = container.Resources{
+					Ulimits: expected,
+				}
 			},
 		},
 		Started: true,
@@ -2389,7 +2415,9 @@ func TestContainerCapAdd(t *testing.T) {
 			Image:        nginxAlpineImage,
 			ExposedPorts: []string{nginxDefaultPort},
 			WaitingFor:   wait.ForListeningPort(nginxDefaultPort),
-			CapAdd:       []string{expected},
+			HostConfigModifier: func(hc *container.HostConfig) {
+				hc.CapAdd = []string{expected}
+			},
 		},
 		Started: true,
 	})
@@ -2533,8 +2561,10 @@ func TestNetworkModeWithContainerReference(t *testing.T) {
 	nginxB, err := GenericContainer(ctx, GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image:       nginxAlpineImage,
-			NetworkMode: container.NetworkMode(networkMode),
+			Image: nginxAlpineImage,
+			HostConfigModifier: func(hc *container.HostConfig) {
+				hc.NetworkMode = container.NetworkMode(networkMode)
+			},
 		},
 		Started: true,
 	})
@@ -2561,10 +2591,11 @@ func assertExtractedFiles(t *testing.T, ctx context.Context, container Container
 			require.NoError(t, err)
 		}
 
+		fp := filepath.Join(containerFilePath, srcFile.Name())
 		// copy file by file, as there is a limitation in the Docker client to copy an entiry directory from the container
 		// paths for the container files are using Linux path separators
-		fd, err := container.CopyFileFromContainer(ctx, containerFilePath+"/"+srcFile.Name())
-		require.NoError(t, err, "Path not found in container: %s", containerFilePath+"/"+srcFile.Name())
+		fd, err := container.CopyFileFromContainer(ctx, fp)
+		require.NoError(t, err, "Path not found in container: %s", fp)
 		defer fd.Close()
 
 		targetPath := filepath.Join(tmpDir, srcFile.Name())
