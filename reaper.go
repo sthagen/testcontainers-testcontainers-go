@@ -25,7 +25,7 @@ const (
 	// Deprecated: it has been replaced by the internal testcontainersdocker.LabelReaper
 	TestcontainerLabelIsReaper = TestcontainerLabel + ".reaper"
 
-	ReaperDefaultImage = "docker.io/testcontainers/ryuk:0.3.4"
+	ReaperDefaultImage = "docker.io/testcontainers/ryuk:0.4.0"
 )
 
 var (
@@ -98,7 +98,6 @@ func newReaper(ctx context.Context, sessionID string, provider ReaperProvider, o
 			testcontainersdocker.LabelReaper: "true",
 		},
 		SkipReaper:    true,
-		RegistryCred:  reaperOpts.RegistryCredentials,
 		Mounts:        Mounts(BindMount(dockerHost, "/var/run/docker.sock")),
 		Privileged:    tcConfig.RyukPrivileged,
 		WaitingFor:    wait.ForListeningPort(listeningPort),
