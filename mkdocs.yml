@@ -30,6 +30,7 @@ nav:
     - Quickstart: quickstart.md
     - Features:
         - features/creating_container.md
+        - features/configuration.md
         - features/networking.md
         - features/garbage_collector.md
         - features/build_from_dockerfile.md
@@ -52,7 +53,10 @@ nav:
         - modules/index.md
         - modules/couchbase.md
         - modules/localstack.md
+        - modules/mysql.md
+        - modules/postgres.md
         - modules/pulsar.md
+        - modules/vault.md
     - Examples:
         - examples/index.md
         - examples/bigtable.md
@@ -61,9 +65,7 @@ nav:
         - examples/datastore.md
         - examples/firestore.md
         - examples/mongodb.md
-        - examples/mysql.md
         - examples/nginx.md
-        - examples/postgres.md
         - examples/pubsub.md
         - examples/redis.md
         - examples/spanner.md

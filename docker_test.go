@@ -34,12 +34,13 @@ import (
 )
 
 const (
-	mysqlImage       = "docker.io/mysql:8.0.30"
-	nginxImage       = "docker.io/nginx"
-	nginxAlpineImage = "docker.io/nginx:alpine"
-	nginxDefaultPort = "80/tcp"
-	nginxHighPort    = "8080/tcp"
-	daemonMaxVersion = "1.41"
+	mysqlImage        = "docker.io/mysql:8.0.30"
+	nginxDelayedImage = "docker.io/menedev/delayed-nginx:1.15.2"
+	nginxImage        = "docker.io/nginx"
+	nginxAlpineImage  = "docker.io/nginx:alpine"
+	nginxDefaultPort  = "80/tcp"
+	nginxHighPort     = "8080/tcp"
+	daemonMaxVersion  = "1.41"
 )
 
 var providerType = ProviderDocker
@@ -131,7 +132,7 @@ func TestContainerAttachedToNewNetwork(t *testing.T) {
 // }
 
 func TestContainerWithHostNetworkOptions(t *testing.T) {
-	absPath, err := filepath.Abs("./testresources/nginx-highport.conf")
+	absPath, err := filepath.Abs("./testdata/nginx-highport.conf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,9 +141,8 @@ func TestContainerWithHostNetworkOptions(t *testing.T) {
 	gcr := GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image:      nginxAlpineImage,
-			SkipReaper: true,
-			Mounts:     Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
+			Image:  nginxAlpineImage,
+			Mounts: Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
 			ExposedPorts: []string{
 				nginxHighPort,
 			},
@@ -181,7 +181,6 @@ func TestContainerWithHostNetworkOptions_UseExposePortsFromImageConfigs(t *testi
 		ContainerRequest: ContainerRequest{
 			Image:      "nginx",
 			Privileged: true,
-			SkipReaper: true,
 			WaitingFor: wait.ForExposedPort(),
 		},
 		Started: true,
@@ -210,9 +209,8 @@ func TestContainerWithNetworkModeAndNetworkTogether(t *testing.T) {
 	gcr := GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image:      nginxImage,
-			SkipReaper: true,
-			Networks:   []string{"new-network"},
+			Image:    nginxImage,
+			Networks: []string{"new-network"},
 			HostConfigModifier: func(hc *container.HostConfig) {
 				hc.NetworkMode = "host"
 			},
@@ -231,7 +229,7 @@ func TestContainerWithNetworkModeAndNetworkTogether(t *testing.T) {
 func TestContainerWithHostNetworkOptionsAndWaitStrategy(t *testing.T) {
 	ctx := context.Background()
 
-	absPath, err := filepath.Abs("./testresources/nginx-highport.conf")
+	absPath, err := filepath.Abs("./testdata/nginx-highport.conf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +238,6 @@ func TestContainerWithHostNetworkOptionsAndWaitStrategy(t *testing.T) {
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
 			Image:      nginxAlpineImage,
-			SkipReaper: true,
 			WaitingFor: wait.ForListeningPort(nginxHighPort),
 			Mounts:     Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
 			HostConfigModifier: func(hc *container.HostConfig) {
@@ -269,7 +266,7 @@ func TestContainerWithHostNetworkOptionsAndWaitStrategy(t *testing.T) {
 func TestContainerWithHostNetworkAndEndpoint(t *testing.T) {
 	ctx := context.Background()
 
-	absPath, err := filepath.Abs("./testresources/nginx-highport.conf")
+	absPath, err := filepath.Abs("./testdata/nginx-highport.conf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +275,6 @@ func TestContainerWithHostNetworkAndEndpoint(t *testing.T) {
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
 			Image:      nginxAlpineImage,
-			SkipReaper: true,
 			WaitingFor: wait.ForListeningPort(nginxHighPort),
 			Mounts:     Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
 			HostConfigModifier: func(hc *container.HostConfig) {
@@ -305,45 +301,6 @@ func TestContainerWithHostNetworkAndEndpoint(t *testing.T) {
 	}
 }
 
-func TestContainerWithHostNetworkAndPortEndpoint(t *testing.T) {
-	ctx := context.Background()
-
-	absPath, err := filepath.Abs("./testresources/nginx-highport.conf")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gcr := GenericContainerRequest{
-		ProviderType: providerType,
-		ContainerRequest: ContainerRequest{
-			Image:      nginxAlpineImage,
-			SkipReaper: true,
-			WaitingFor: wait.ForListeningPort(nginxHighPort),
-			Mounts:     Mounts(BindMount(absPath, "/etc/nginx/conf.d/default.conf")),
-			HostConfigModifier: func(hc *container.HostConfig) {
-				hc.NetworkMode = "host"
-			},
-		},
-		Started: true,
-	}
-
-	nginxC, err := GenericContainer(ctx, gcr)
-
-	require.NoError(t, err)
-	terminateContainerOnEnd(t, ctx, nginxC)
-
-	origin, err := nginxC.PortEndpoint(ctx, nginxHighPort, "http")
-	if err != nil {
-		t.Errorf("Expected host %s. Got '%d'.", origin, err)
-	}
-	t.Log(origin)
-
-	_, err = http.Get(origin)
-	if err != nil {
-		t.Errorf("Expected OK response. Got '%d'.", err)
-	}
-}
-
 func TestContainerReturnItsContainerID(t *testing.T) {
 	ctx := context.Background()
 	nginxA, err := GenericContainer(ctx, GenericContainerRequest{
@@ -365,6 +322,11 @@ func TestContainerReturnItsContainerID(t *testing.T) {
 }
 
 func TestContainerStartsWithoutTheReaper(t *testing.T) {
+	tcConfig := readConfig() // read the config using the private method to avoid the sync.Once
+	if !tcConfig.RyukDisabled {
+		t.Skip("Ryuk is enabled, skipping test")
+	}
+
 	ctx := context.Background()
 	client, err := testcontainersdocker.NewClient(ctx)
 	if err != nil {
@@ -380,7 +342,6 @@ func TestContainerStartsWithoutTheReaper(t *testing.T) {
 			ExposedPorts: []string{
 				nginxDefaultPort,
 			},
-			SkipReaper: true,
 		},
 		Started: true,
 	})
@@ -400,6 +361,11 @@ func TestContainerStartsWithoutTheReaper(t *testing.T) {
 }
 
 func TestContainerStartsWithTheReaper(t *testing.T) {
+	tcConfig := readConfig() // read the config using the private method to avoid the sync.Once
+	if tcConfig.RyukDisabled {
+		t.Skip("Ryuk is disabled, skipping test")
+	}
+
 	ctx := context.Background()
 	client, err := testcontainersdocker.NewClient(ctx)
 	if err != nil {
@@ -407,7 +373,7 @@ func TestContainerStartsWithTheReaper(t *testing.T) {
 	}
 	defer client.Close()
 
-	_, err = GenericContainer(ctx, GenericContainerRequest{
+	c, err := GenericContainer(ctx, GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
 			Image: nginxAlpineImage,
@@ -420,6 +386,8 @@ func TestContainerStartsWithTheReaper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	terminateContainerOnEnd(t, ctx, c)
+
 	filtersJSON := fmt.Sprintf(`{"label":{"%s":true}}`, testcontainersdocker.LabelReaper)
 	f, err := filters.FromJSON(filtersJSON)
 	if err != nil {
@@ -446,7 +414,6 @@ func TestContainerTerminationResetsState(t *testing.T) {
 			ExposedPorts: []string{
 				nginxDefaultPort,
 			},
-			SkipReaper: true,
 		},
 		Started: true,
 	})
@@ -526,6 +493,11 @@ func TestContainerStateAfterTermination(t *testing.T) {
 }
 
 func TestContainerStopWithReaper(t *testing.T) {
+	tcConfig := readConfig() // read the config using the private method to avoid the sync.Once
+	if tcConfig.RyukDisabled {
+		t.Skip("Ryuk is disabled, skipping test")
+	}
+
 	ctx := context.Background()
 
 	nginxA, err := GenericContainer(ctx, GenericContainerRequest{
@@ -568,6 +540,11 @@ func TestContainerStopWithReaper(t *testing.T) {
 }
 
 func TestContainerTerminationWithReaper(t *testing.T) {
+	tcConfig := readConfig() // read the config using the private method to avoid the sync.Once
+	if tcConfig.RyukDisabled {
+		t.Skip("Ryuk is disabled, skipping test")
+	}
+
 	ctx := context.Background()
 
 	nginxA, err := GenericContainer(ctx, GenericContainerRequest{
@@ -602,6 +579,11 @@ func TestContainerTerminationWithReaper(t *testing.T) {
 }
 
 func TestContainerTerminationWithoutReaper(t *testing.T) {
+	tcConfig := readConfig() // read the config using the private method to avoid the sync.Once
+	if !tcConfig.RyukDisabled {
+		t.Skip("Ryuk is enabled, skipping test")
+	}
+
 	ctx := context.Background()
 
 	nginxA, err := GenericContainer(ctx, GenericContainerRequest{
@@ -611,7 +593,6 @@ func TestContainerTerminationWithoutReaper(t *testing.T) {
 			ExposedPorts: []string{
 				nginxDefaultPort,
 			},
-			SkipReaper: true,
 		},
 		Started: true,
 	})
@@ -653,7 +634,6 @@ func TestContainerTerminationRemovesDockerImage(t *testing.T) {
 				ExposedPorts: []string{
 					nginxDefaultPort,
 				},
-				SkipReaper: true,
 			},
 			Started: true,
 		})
@@ -680,7 +660,7 @@ func TestContainerTerminationRemovesDockerImage(t *testing.T) {
 
 		req := ContainerRequest{
 			FromDockerfile: FromDockerfile{
-				Context: "./testresources",
+				Context: "./testdata",
 			},
 			ExposedPorts: []string{"6379/tcp"},
 			WaitingFor:   wait.ForLog("Ready to accept connections"),
@@ -932,7 +912,7 @@ func TestContainerCreationAndWaitForListeningPortLongEnough(t *testing.T) {
 	nginxC, err := GenericContainer(ctx, GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image: "docker.io/menedev/delayed-nginx:1.15.2",
+			Image: nginxDelayedImage,
 			ExposedPorts: []string{
 				nginxDefaultPort,
 			},
@@ -963,7 +943,7 @@ func TestContainerCreationTimesOut(t *testing.T) {
 	nginxC, err := GenericContainer(ctx, GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image: "docker.io/menedev/delayed-nginx:1.15.2",
+			Image: nginxDelayedImage,
 			ExposedPorts: []string{
 				nginxDefaultPort,
 			},
@@ -971,12 +951,11 @@ func TestContainerCreationTimesOut(t *testing.T) {
 		},
 		Started: true,
 	})
+
+	terminateContainerOnEnd(t, ctx, nginxC)
+
 	if err == nil {
 		t.Error("Expected timeout")
-		err := nginxC.Terminate(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
 	}
 }
 
@@ -1018,7 +997,7 @@ func TestContainerCreationTimesOutWithHttp(t *testing.T) {
 	nginxC, err := GenericContainer(ctx, GenericContainerRequest{
 		ProviderType: providerType,
 		ContainerRequest: ContainerRequest{
-			Image: "docker.io/menedev/delayed-nginx:1.15.2",
+			Image: nginxDelayedImage,
 			ExposedPorts: []string{
 				nginxDefaultPort,
 			},
@@ -1044,15 +1023,16 @@ func TestContainerCreationWaitsForLogContextTimeout(t *testing.T) {
 		},
 		WaitingFor: wait.ForLog("test context timeout").WithStartupTimeout(1 * time.Second),
 	}
-	_, err := GenericContainer(ctx, GenericContainerRequest{
+	c, err := GenericContainer(ctx, GenericContainerRequest{
 		ProviderType:     providerType,
 		ContainerRequest: req,
 		Started:          true,
 	})
-
 	if err == nil {
 		t.Error("Expected timeout")
 	}
+
+	terminateContainerOnEnd(t, ctx, c)
 }
 
 func TestContainerCreationWaitsForLog(t *testing.T) {
@@ -1085,7 +1065,7 @@ func Test_BuildContainerFromDockerfileWithBuildArgs(t *testing.T) {
 	t.Log("got ctx, creating container request")
 	req := ContainerRequest{
 		FromDockerfile: FromDockerfile{
-			Context:    "./testresources",
+			Context:    "./testdata",
 			Dockerfile: "args.Dockerfile",
 			BuildArgs: map[string]*string{
 				"FOO": &ba,
@@ -1137,7 +1117,7 @@ func Test_BuildContainerFromDockerfileWithBuildLog(t *testing.T) {
 	// fromDockerfile {
 	req := ContainerRequest{
 		FromDockerfile: FromDockerfile{
-			Context:       "./testresources",
+			Context:       "./testdata",
 			Dockerfile:    "buildlog.Dockerfile",
 			PrintBuildLog: true,
 		},
@@ -1179,15 +1159,16 @@ func TestContainerCreationWaitsForLogAndPortContextTimeout(t *testing.T) {
 			wait.ForListeningPort("3306/tcp"),
 		),
 	}
-	_, err := GenericContainer(ctx, GenericContainerRequest{
+	c, err := GenericContainer(ctx, GenericContainerRequest{
 		ProviderType:     providerType,
 		ContainerRequest: req,
 		Started:          true,
 	})
-
 	if err == nil {
 		t.Fatal("Expected timeout")
 	}
+
+	terminateContainerOnEnd(t, ctx, c)
 }
 
 func TestContainerCreationWaitingForHostPort(t *testing.T) {
@@ -1278,263 +1259,6 @@ func TestEntrypoint(t *testing.T) {
 
 	require.NoError(t, err)
 	terminateContainerOnEnd(t, ctx, c)
-}
-
-func TestReadTCPropsFile(t *testing.T) {
-	t.Run("HOME is not set", func(t *testing.T) {
-		t.Setenv("HOME", "")
-
-		config := configureTC()
-
-		assert.Empty(t, config, "TC props file should not exist")
-	})
-
-	t.Run("HOME is not set - TESTCONTAINERS_ env is set", func(t *testing.T) {
-		t.Setenv("HOME", "")
-		t.Setenv("TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED", "true")
-
-		config := configureTC()
-
-		expected := TestContainersConfig{}
-		expected.RyukPrivileged = true
-
-		assert.Equal(t, expected, config)
-	})
-
-	t.Run("HOME does not contain TC props file", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		t.Setenv("HOME", tmpDir)
-
-		config := configureTC()
-
-		assert.Empty(t, config, "TC props file should not exist")
-	})
-
-	t.Run("HOME does not contain TC props file - TESTCONTAINERS_ env is set", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		t.Setenv("HOME", tmpDir)
-		t.Setenv("TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED", "true")
-
-		config := configureTC()
-		expected := TestContainersConfig{}
-		expected.RyukPrivileged = true
-
-		assert.Equal(t, expected, config)
-	})
-
-	t.Run("HOME contains TC properties file", func(t *testing.T) {
-		tests := []struct {
-			content  string
-			env      map[string]string
-			expected TestContainersConfig
-		}{
-			{
-				"docker.host = tcp://127.0.0.1:33293",
-				map[string]string{},
-				TestContainersConfig{
-					Host:      "tcp://127.0.0.1:33293",
-					TLSVerify: 0,
-					CertPath:  "",
-				},
-			},
-			{
-				"docker.host = tcp://127.0.0.1:33293",
-				map[string]string{},
-				TestContainersConfig{
-					Host:      "tcp://127.0.0.1:33293",
-					TLSVerify: 0,
-					CertPath:  "",
-				},
-			},
-			{
-				`docker.host = tcp://127.0.0.1:33293
-	docker.host = tcp://127.0.0.1:4711
-	`,
-				map[string]string{},
-				TestContainersConfig{
-					Host:      "tcp://127.0.0.1:4711",
-					TLSVerify: 0,
-					CertPath:  "",
-				},
-			},
-			{
-				`docker.host = tcp://127.0.0.1:33293
-	docker.host = tcp://127.0.0.1:4711
-	docker.host = tcp://127.0.0.1:1234
-	docker.tls.verify = 1
-	`,
-				map[string]string{},
-				TestContainersConfig{
-					Host:      "tcp://127.0.0.1:1234",
-					TLSVerify: 1,
-					CertPath:  "",
-				},
-			},
-			{
-				"",
-				map[string]string{},
-				TestContainersConfig{
-					Host:      "",
-					TLSVerify: 0,
-					CertPath:  "",
-				},
-			},
-			{
-				`foo = bar
-	docker.host = tcp://127.0.0.1:1234
-			`,
-				map[string]string{},
-				TestContainersConfig{
-					Host:      "tcp://127.0.0.1:1234",
-					TLSVerify: 0,
-					CertPath:  "",
-				},
-			},
-			{
-				"docker.host=tcp://127.0.0.1:33293",
-				map[string]string{},
-				TestContainersConfig{
-					Host:      "tcp://127.0.0.1:33293",
-					TLSVerify: 0,
-					CertPath:  "",
-				},
-			},
-			{
-				`#docker.host=tcp://127.0.0.1:33293`,
-				map[string]string{},
-				TestContainersConfig{
-					Host:      "",
-					TLSVerify: 0,
-					CertPath:  "",
-				},
-			},
-			{
-				`#docker.host = tcp://127.0.0.1:33293
-	docker.host = tcp://127.0.0.1:4711
-	docker.host = tcp://127.0.0.1:1234
-	docker.cert.path=/tmp/certs`,
-				map[string]string{},
-				TestContainersConfig{
-					Host:      "tcp://127.0.0.1:1234",
-					TLSVerify: 0,
-					CertPath:  "/tmp/certs",
-				},
-			},
-			{
-				`ryuk.container.privileged=true`,
-				map[string]string{},
-				TestContainersConfig{
-					Host:           "",
-					TLSVerify:      0,
-					CertPath:       "",
-					RyukPrivileged: true,
-				},
-			},
-			{
-				``,
-				map[string]string{
-					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "true",
-				},
-				TestContainersConfig{
-					Host:           "",
-					TLSVerify:      0,
-					CertPath:       "",
-					RyukPrivileged: true,
-				},
-			},
-			{
-				`ryuk.container.privileged=true`,
-				map[string]string{
-					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "true",
-				},
-				TestContainersConfig{
-					Host:           "",
-					TLSVerify:      0,
-					CertPath:       "",
-					RyukPrivileged: true,
-				},
-			},
-			{
-				`ryuk.container.privileged=false`,
-				map[string]string{
-					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "true",
-				},
-				TestContainersConfig{
-					Host:           "",
-					TLSVerify:      0,
-					CertPath:       "",
-					RyukPrivileged: true,
-				},
-			},
-			{
-				`ryuk.container.privileged=true`,
-				map[string]string{
-					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "false",
-				},
-				TestContainersConfig{
-					Host:           "",
-					TLSVerify:      0,
-					CertPath:       "",
-					RyukPrivileged: false,
-				},
-			},
-			{
-				`ryuk.container.privileged=false`,
-				map[string]string{
-					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "false",
-				},
-				TestContainersConfig{
-					Host:           "",
-					TLSVerify:      0,
-					CertPath:       "",
-					RyukPrivileged: false,
-				},
-			},
-			{
-				`ryuk.container.privileged=false
-				docker.tls.verify = ERROR`,
-				map[string]string{
-					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "true",
-				},
-				TestContainersConfig{
-					Host:           "",
-					TLSVerify:      0,
-					CertPath:       "",
-					RyukPrivileged: true,
-				},
-			},
-			{
-				`ryuk.container.privileged=false`,
-				map[string]string{
-					"TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED": "foo",
-				},
-				TestContainersConfig{
-					Host:           "",
-					TLSVerify:      0,
-					CertPath:       "",
-					RyukPrivileged: false,
-				},
-			},
-		}
-		for i, tt := range tests {
-			t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-				tmpDir := t.TempDir()
-				t.Setenv("HOME", tmpDir)
-				for k, v := range tt.env {
-					t.Setenv(k, v)
-				}
-				if err := os.WriteFile(filepath.Join(tmpDir, ".testcontainers.properties"), []byte(tt.content), 0o600); err != nil {
-					t.Errorf("Failed to create the file: %v", err)
-					return
-				}
-
-				config := configureTC()
-
-				assert.Equal(t, tt.expected, config, "Configuration doesn't not match")
-
-			})
-		}
-	})
 }
 
 func ExampleDockerProvider_CreateContainer() {
@@ -1638,14 +1362,14 @@ func ExampleContainer_MappedPort() {
 }
 
 func TestContainerCreationWithBindAndVolume(t *testing.T) {
-	absPath, err := filepath.Abs("./testresources/hello.sh")
+	absPath, err := filepath.Abs("./testdata/hello.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cnl := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cnl()
 	// Create a Docker client.
-	dockerCli, _, _, err := NewDockerClient()
+	dockerCli, err := NewDockerClient()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1730,8 +1454,7 @@ func TestContainerNonExistentImage(t *testing.T) {
 	t.Run("if the image not found don't propagate the error", func(t *testing.T) {
 		_, err := GenericContainer(context.Background(), GenericContainerRequest{
 			ContainerRequest: ContainerRequest{
-				Image:      "postgres:nonexistent-version",
-				SkipReaper: true,
+				Image: "postgres:nonexistent-version",
 			},
 			Started: true,
 		})
@@ -1745,18 +1468,19 @@ func TestContainerNonExistentImage(t *testing.T) {
 	t.Run("the context cancellation is propagated to container creation", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		_, err := GenericContainer(ctx, GenericContainerRequest{
+		c, err := GenericContainer(ctx, GenericContainerRequest{
 			ProviderType: providerType,
 			ContainerRequest: ContainerRequest{
 				Image:      "docker.io/postgres:12",
 				WaitingFor: wait.ForLog("log"),
-				SkipReaper: true,
 			},
 			Started: true,
 		})
 		if !errors.Is(err, ctx.Err()) {
 			t.Fatalf("err should be a ctx cancelled error %v", err)
 		}
+
+		terminateContainerOnEnd(t, ctx, c)
 	})
 }
 
@@ -1773,7 +1497,6 @@ func TestContainerCustomPlatformImage(t *testing.T) {
 			ProviderType: providerType,
 			ContainerRequest: ContainerRequest{
 				Image:         "docker.io/redis:latest",
-				SkipReaper:    true,
 				ImagePlatform: nonExistentPlatform,
 			},
 			Started: false,
@@ -1792,7 +1515,6 @@ func TestContainerCustomPlatformImage(t *testing.T) {
 			ProviderType: providerType,
 			ContainerRequest: ContainerRequest{
 				Image:         "docker.io/mysql:5.7",
-				SkipReaper:    true,
 				ImagePlatform: "linux/amd64",
 			},
 			Started: false,
@@ -1801,7 +1523,7 @@ func TestContainerCustomPlatformImage(t *testing.T) {
 		require.NoError(t, err)
 		terminateContainerOnEnd(t, ctx, c)
 
-		dockerCli, _, _, err := NewDockerClient()
+		dockerCli, err := NewDockerClient()
 		require.NoError(t, err)
 
 		ctr, err := dockerCli.ContainerInspect(ctx, c.GetContainerID())
@@ -1838,7 +1560,7 @@ func TestContainerWithCustomHostname(t *testing.T) {
 }
 
 func readHostname(tb testing.TB, containerId string) string {
-	containerClient, _, _, err := NewDockerClient()
+	containerClient, err := NewDockerClient()
 	if err != nil {
 		tb.Fatalf("Failed to create Docker client: %v", err)
 	}
@@ -1868,7 +1590,7 @@ func TestDockerContainerCopyFileToContainer(t *testing.T) {
 	terminateContainerOnEnd(t, ctx, nginxC)
 
 	copiedFileName := "hello_copy.sh"
-	_ = nginxC.CopyFileToContainer(ctx, "./testresources/hello.sh", "/"+copiedFileName, 700)
+	_ = nginxC.CopyFileToContainer(ctx, "./testdata/hello.sh", "/"+copiedFileName, 700)
 	c, _, err := nginxC.Exec(ctx, []string{"bash", copiedFileName})
 	if err != nil {
 		t.Fatal(err)
@@ -1891,25 +1613,25 @@ func TestDockerContainerCopyDirToContainer(t *testing.T) {
 		Started: true,
 	})
 
-	p := filepath.Join(".", "testresources", "Dokerfile")
+	p := filepath.Join(".", "testdata", "Dokerfile")
 	require.NoError(t, err)
 	terminateContainerOnEnd(t, ctx, nginxC)
 
-	err = nginxC.CopyDirToContainer(ctx, p, "/tmp/testresources/Dockerfile", 700)
+	err = nginxC.CopyDirToContainer(ctx, p, "/tmp/testdata/Dockerfile", 700)
 	require.Error(t, err) // copying a file using the directory method will raise an error
 
-	p = filepath.Join(".", "testresources")
-	err = nginxC.CopyDirToContainer(ctx, p, "/tmp/testresources", 700)
+	p = filepath.Join(".", "testdata")
+	err = nginxC.CopyDirToContainer(ctx, p, "/tmp/testdata", 700)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	assertExtractedFiles(t, ctx, nginxC, p, "/tmp/testresources/")
+	assertExtractedFiles(t, ctx, nginxC, p, "/tmp/testdata/")
 }
 
 func TestDockerCreateContainerWithFiles(t *testing.T) {
 	ctx := context.Background()
-	hostFileName := "./testresources/hello.sh"
+	hostFileName := "./testdata/hello.sh"
 	copiedFileName := "/hello_copy.sh"
 	tests := []struct {
 		name   string
@@ -1936,8 +1658,8 @@ func TestDockerCreateContainerWithFiles(t *testing.T) {
 				},
 			},
 			errMsg: "can't copy " +
-				"./testresources/hello.sh123 to container: open " +
-				"./testresources/hello.sh123: no such file or directory: " +
+				"./testdata/hello.sh123 to container: open " +
+				"./testdata/hello.sh123: no such file or directory: " +
 				"failed to create container",
 		},
 	}
@@ -1978,7 +1700,7 @@ func TestDockerCreateContainerWithFiles(t *testing.T) {
 
 func TestDockerCreateContainerWithDirs(t *testing.T) {
 	ctx := context.Background()
-	hostDirName := "testresources"
+	hostDirName := "testdata"
 
 	abs, err := filepath.Abs(filepath.Join(".", hostDirName))
 	assert.Nil(t, err)
@@ -2009,7 +1731,7 @@ func TestDockerCreateContainerWithDirs(t *testing.T) {
 		{
 			name: "host dir not found",
 			dir: ContainerFile{
-				HostFilePath:      "./testresources123",  // does not exist
+				HostFilePath:      "./testdata123",       // does not exist
 				ContainerFilePath: "/tmp/" + hostDirName, // the parent dir must exist
 				FileMode:          700,
 			},
@@ -2019,7 +1741,7 @@ func TestDockerCreateContainerWithDirs(t *testing.T) {
 			name: "container dir not found",
 			dir: ContainerFile{
 				HostFilePath:      "./" + hostDirName,
-				ContainerFilePath: "/parent-does-not-exist/testresources123", // does not exist
+				ContainerFilePath: "/parent-does-not-exist/testdata123", // does not exist
 				FileMode:          700,
 			},
 			hasError: true,
@@ -2066,7 +1788,7 @@ func TestDockerContainerCopyToContainer(t *testing.T) {
 
 	copiedFileName := "hello_copy.sh"
 
-	fileContent, err := os.ReadFile("./testresources/hello.sh")
+	fileContent, err := os.ReadFile("./testdata/hello.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2081,7 +1803,7 @@ func TestDockerContainerCopyToContainer(t *testing.T) {
 }
 
 func TestDockerContainerCopyFileFromContainer(t *testing.T) {
-	fileContent, err := os.ReadFile("./testresources/hello.sh")
+	fileContent, err := os.ReadFile("./testdata/hello.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2101,7 +1823,7 @@ func TestDockerContainerCopyFileFromContainer(t *testing.T) {
 	terminateContainerOnEnd(t, ctx, nginxC)
 
 	copiedFileName := "hello_copy.sh"
-	_ = nginxC.CopyFileToContainer(ctx, "./testresources/hello.sh", "/"+copiedFileName, 700)
+	_ = nginxC.CopyFileToContainer(ctx, "./testdata/hello.sh", "/"+copiedFileName, 700)
 	c, _, err := nginxC.Exec(ctx, []string{"bash", copiedFileName})
 	if err != nil {
 		t.Fatal(err)
@@ -2139,7 +1861,7 @@ func TestDockerContainerCopyEmptyFileFromContainer(t *testing.T) {
 	terminateContainerOnEnd(t, ctx, nginxC)
 
 	copiedFileName := "hello_copy.sh"
-	_ = nginxC.CopyFileToContainer(ctx, "./testresources/empty.sh", "/"+copiedFileName, 700)
+	_ = nginxC.CopyFileToContainer(ctx, "./testdata/empty.sh", "/"+copiedFileName, 700)
 	c, _, err := nginxC.Exec(ctx, []string{"bash", copiedFileName})
 	if err != nil {
 		t.Fatal(err)
