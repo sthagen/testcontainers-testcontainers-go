@@ -287,15 +287,15 @@ func TestGenerate(t *testing.T) {
 	_, err = os.Stat(exampleDocFile)
 	assert.Nil(t, err) // error nil implies the file exist
 
-	exampleWorkflowFile := filepath.Join(githubWorkflowsTmp, exampleNameLower+"-example.yml")
-	_, err = os.Stat(exampleWorkflowFile)
+	mainWorkflowFile := filepath.Join(githubWorkflowsTmp, "ci.yml")
+	_, err = os.Stat(mainWorkflowFile)
 	assert.Nil(t, err) // error nil implies the file exist
 
 	// check the number of template files is equal to examples + 2 (the doc and the github workflow)
 	assert.Equal(t, len(newExampleDir)+2, len(templatesDir))
 
 	assertExampleDocContent(t, example, exampleDocFile)
-	assertExampleGithubWorkflowContent(t, example, exampleWorkflowFile)
+	assertExampleGithubWorkflowContent(t, example, mainWorkflowFile)
 
 	generatedTemplatesDir := filepath.Join(examplesTmp, exampleNameLower)
 	assertExampleTestContent(t, example, filepath.Join(generatedTemplatesDir, exampleNameLower+"_test.go"))
@@ -358,15 +358,15 @@ func TestGenerateModule(t *testing.T) {
 	_, err = os.Stat(exampleDocFile)
 	assert.Nil(t, err) // error nil implies the file exist
 
-	exampleWorkflowFile := filepath.Join(githubWorkflowsTmp, "module-"+exampleNameLower+".yml")
-	_, err = os.Stat(exampleWorkflowFile)
+	mainWorkflowFile := filepath.Join(githubWorkflowsTmp, "ci.yml")
+	_, err = os.Stat(mainWorkflowFile)
 	assert.Nil(t, err) // error nil implies the file exist
 
 	// check the number of template files is equal to examples + 2 (the doc and the github workflow)
 	assert.Equal(t, len(newExampleDir)+2, len(templatesDir))
 
 	assertExampleDocContent(t, example, exampleDocFile)
-	assertExampleGithubWorkflowContent(t, example, exampleWorkflowFile)
+	assertExampleGithubWorkflowContent(t, example, mainWorkflowFile)
 
 	generatedTemplatesDir := filepath.Join(modulesTmp, exampleNameLower)
 	assertExampleTestContent(t, example, filepath.Join(generatedTemplatesDir, exampleNameLower+"_test.go"))
@@ -397,8 +397,17 @@ func assertDependabotExamplesUpdates(t *testing.T, example Example, originalConf
 
 	assert.True(t, found)
 
-	// first item is the main module
+	// first item is the github-actions module
 	assert.Equal(t, "/", examples[0].Directory, examples)
+	assert.Equal(t, "github-actions", examples[0].PackageEcosystem, "PackageEcosystem should be github-actions")
+
+	// second item is the core module
+	assert.Equal(t, "/", examples[1].Directory, examples)
+	assert.Equal(t, "gomod", examples[1].PackageEcosystem, "PackageEcosystem should be gomod")
+
+	// third item is the pip module
+	assert.Equal(t, "/", examples[2].Directory, examples)
+	assert.Equal(t, "pip", examples[2].PackageEcosystem, "PackageEcosystem should be pip")
 }
 
 // assert content example file in the docs
@@ -409,7 +418,7 @@ func assertExampleDocContent(t *testing.T, example Example, exampleDocFile strin
 	lower := example.Lower()
 	title := example.Title()
 
-	data := strings.Split(string(content), "\n")
+	data := sanitiseContent(content)
 	assert.Equal(t, data[0], "# "+title)
 	assert.Equal(t, data[2], `Not available until the next release of testcontainers-go <a href="https://github.com/testcontainers/testcontainers-go"><span class="tc-version">:material-tag: main</span></a>`)
 	assert.Equal(t, data[4], "## Introduction")
@@ -433,7 +442,7 @@ func assertExampleTestContent(t *testing.T, example Example, exampleTestFile str
 	content, err := os.ReadFile(exampleTestFile)
 	assert.Nil(t, err)
 
-	data := strings.Split(string(content), "\n")
+	data := sanitiseContent(content)
 	assert.Equal(t, data[0], "package "+example.Lower())
 	assert.Equal(t, data[7], "func Test"+example.Title()+"(t *testing.T) {")
 	assert.Equal(t, data[10], "\tcontainer, err := RunContainer(ctx)")
@@ -449,7 +458,7 @@ func assertExampleContent(t *testing.T, example Example, exampleFile string) {
 	exampleName := example.Title()
 	entrypoint := example.Entrypoint()
 
-	data := strings.Split(string(content), "\n")
+	data := sanitiseContent(content)
 	assert.Equal(t, data[0], "package "+lower)
 	assert.Equal(t, data[8], "// "+containerName+" represents the "+exampleName+" container type used in the module")
 	assert.Equal(t, data[9], "type "+containerName+" struct {")
@@ -464,17 +473,15 @@ func assertExampleGithubWorkflowContent(t *testing.T, example Example, exampleWo
 	content, err := os.ReadFile(exampleWorkflowFile)
 	assert.Nil(t, err)
 
-	lower := example.Lower()
-	title := example.Title()
+	data := sanitiseContent(content)
 
-	data := strings.Split(string(content), "\n")
-	assert.Equal(t, "name: "+title+" "+example.Type()+" pipeline", data[0])
-	assert.Equal(t, "  test-"+lower+":", data[19])
-	assert.Equal(t, "          go-version: ${{ matrix.go-version }}", data[29])
-	assert.Equal(t, "        working-directory: ./"+example.ParentDir()+"/"+lower, data[36])
-	assert.Equal(t, "        working-directory: ./"+example.ParentDir()+"/"+lower, data[40])
-	assert.Equal(t, "        working-directory: ./"+example.ParentDir()+"/"+lower, data[44])
-	assert.Equal(t, "          paths: \"**/TEST-unit*.xml\"", data[56])
+	modulesList, err := getModulesOrExamplesAsString(true)
+	assert.Nil(t, err)
+	assert.Equal(t, "        module: ["+modulesList+"]", data[84])
+
+	examplesList, err := getModulesOrExamplesAsString(false)
+	assert.Nil(t, err)
+	assert.Equal(t, "        module: ["+examplesList+"]", data[102])
 }
 
 // assert content go.mod
@@ -482,7 +489,7 @@ func assertGoModContent(t *testing.T, example Example, goModFile string) {
 	content, err := os.ReadFile(goModFile)
 	assert.Nil(t, err)
 
-	data := strings.Split(string(content), "\n")
+	data := sanitiseContent(content)
 	assert.Equal(t, "module github.com/testcontainers/testcontainers-go/"+example.ParentDir()+"/"+example.Lower(), data[0])
 	assert.Equal(t, "\tgithub.com/testcontainers/testcontainers-go "+example.TCVersion, data[5])
 }
@@ -492,7 +499,7 @@ func assertMakefileContent(t *testing.T, example Example, makefile string) {
 	content, err := os.ReadFile(makefile)
 	assert.Nil(t, err)
 
-	data := strings.Split(string(content), "\n")
+	data := sanitiseContent(content)
 	assert.Equal(t, data[4], "\t$(MAKE) test-"+example.Lower())
 }
 
@@ -525,4 +532,15 @@ func assertMkdocsExamplesNav(t *testing.T, example Example, originalConfig *MkDo
 
 	// first item is the index
 	assert.Equal(t, parentDir+"/index.md", examples[0], examples)
+}
+
+func sanitiseContent(bytes []byte) []string {
+	content := string(bytes)
+
+	// Windows uses \r\n for newlines, but we want to use \n
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+
+	data := strings.Split(content, "\n")
+
+	return data
 }
