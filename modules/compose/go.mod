@@ -8,11 +8,11 @@ replace (
 )
 
 require (
-	github.com/compose-spec/compose-go v1.17.0
+	github.com/compose-spec/compose-go v1.18.3
 	github.com/docker/cli v24.0.5+incompatible
-	github.com/docker/compose/v2 v2.20.2
+	github.com/docker/compose/v2 v2.21.0
 	github.com/docker/docker v24.0.5+incompatible
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.3.1
 	github.com/stretchr/testify v1.8.4
 	github.com/testcontainers/testcontainers-go v0.22.0
 	golang.org/x/sync v0.3.0
@@ -100,9 +100,9 @@ require (
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
 	github.com/miekg/pkcs11 v1.1.1 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
-	github.com/moby/buildkit v0.12.1-0.20230717122532-faa0cc7da353 // indirect
+	github.com/moby/buildkit v0.12.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
-	github.com/moby/patternmatcher v0.5.0 // indirect
+	github.com/moby/patternmatcher v0.6.0 // indirect
 	github.com/moby/spdystream v0.2.0 // indirect
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
