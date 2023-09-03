@@ -1,12 +1,12 @@
 module github.com/testcontainers/testcontainers-go/modules/postgres
 
-go 1.19
+go 1.20
 
 require (
 	github.com/docker/go-connections v0.4.0
 	github.com/lib/pq v1.10.9
 	github.com/stretchr/testify v1.8.4
-	github.com/testcontainers/testcontainers-go v0.22.0
+	github.com/testcontainers/testcontainers-go v0.23.0
 
 )
 

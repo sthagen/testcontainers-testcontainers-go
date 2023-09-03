@@ -1,10 +1,10 @@
 module github.com/testcontainers/testcontainers-go/modules/mysql
 
-go 1.19
+go 1.20
 
 require (
 	github.com/go-sql-driver/mysql v1.7.1
-	github.com/testcontainers/testcontainers-go v0.22.0
+	github.com/testcontainers/testcontainers-go v0.23.0
 
 )
 

@@ -8,6 +8,7 @@ import (
 
 	// Import mysql into the scope of this package (required)
 	_ "github.com/go-sql-driver/mysql"
+
 	"github.com/testcontainers/testcontainers-go"
 )
 
@@ -114,7 +115,7 @@ func TestMySQLWithConfigFile(t *testing.T) {
 
 	// withConfigFile {
 	container, err := RunContainer(ctx, testcontainers.WithImage("mysql:5.6"),
-		WithConfigFile("./testdata/my.cnf"))
+		WithConfigFile(filepath.Join("testdata", "my.cnf")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,13 +140,13 @@ func TestMySQLWithConfigFile(t *testing.T) {
 	if err = db.Ping(); err != nil {
 		t.Errorf("error pinging db: %+v\n", err)
 	}
-	stmt, _ := db.Prepare("SELECT @@GLOBAL.innodb_file_format")
+	stmt, err := db.Prepare("SELECT @@GLOBAL.innodb_file_format")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stmt.Close()
 	row := stmt.QueryRow()
-	var innodbFileFormat = ""
+	innodbFileFormat := ""
 	err = row.Scan(&innodbFileFormat)
 	if err != nil {
 		t.Errorf("error fetching innodb_file_format value")

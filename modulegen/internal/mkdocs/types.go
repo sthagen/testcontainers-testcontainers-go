@@ -1,13 +1,13 @@
-package main
+package mkdocs
 
 import (
-	"os"
-	"path/filepath"
+	"sort"
+	"strings"
 
-	"gopkg.in/yaml.v3"
+	"golang.org/x/exp/slices"
 )
 
-type MkDocsConfig struct {
+type Config struct {
 	SiteName string   `yaml:"site_name"`
 	SiteURL  string   `yaml:"site_url"`
 	Plugins  []string `yaml:"plugins"`
@@ -44,63 +44,36 @@ type MkDocsConfig struct {
 	} `yaml:"extra"`
 }
 
-func getMkdocsConfigFile(rootDir string) string {
-	return filepath.Join(rootDir, "mkdocs.yml")
-}
-
-func getExamples() ([]os.DirEntry, error) {
-	return getModulesOrExamples(false)
-}
-
-func getExamplesDocs() ([]os.DirEntry, error) {
-	parent, err := getRootDir()
-	if err != nil {
-		return nil, err
+func (c *Config) addModule(isModule bool, moduleMd string, indexMd string) {
+	mkdocsNavItems := c.Nav[4].Examples
+	if isModule {
+		mkdocsNavItems = c.Nav[3].Modules
 	}
 
-	dir := filepath.Join(parent, "docs", "examples")
+	if !slices.Contains(mkdocsNavItems, moduleMd) {
 
-	return os.ReadDir(dir)
-}
+		// make sure the index.md is the first element in the list of examples in the nav
+		navItems := make([]string, len(mkdocsNavItems)-1)
+		j := 0
 
-func getModules() ([]os.DirEntry, error) {
-	return getModulesOrExamples(true)
-}
+		for _, navItem := range mkdocsNavItems {
+			// filter out the index.md file
+			if !strings.HasSuffix(navItem, "index.md") {
+				navItems[j] = navItem
+				j++
+			}
+		}
 
-func getRootDir() (string, error) {
-	current, err := os.Getwd()
-	if err != nil {
-		return "", err
+		navItems = append(navItems, moduleMd)
+		sort.Strings(navItems)
+
+		// prepend the index.md file
+		navItems = append([]string{indexMd}, navItems...)
+
+		if isModule {
+			c.Nav[3].Modules = navItems
+		} else {
+			c.Nav[4].Examples = navItems
+		}
 	}
-
-	return filepath.Dir(current), nil
-}
-
-func readMkdocsConfig(rootDir string) (*MkDocsConfig, error) {
-	configFile := getMkdocsConfigFile(rootDir)
-
-	file, err := os.ReadFile(configFile)
-	if err != nil {
-		return nil, err
-	}
-
-	config := &MkDocsConfig{}
-
-	err = yaml.Unmarshal(file, config)
-	if err != nil {
-		return nil, err
-	}
-
-	return config, nil
-}
-
-func writeMkdocsConfig(rootDir string, config *MkDocsConfig) error {
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		return err
-	}
-
-	file := getMkdocsConfigFile(rootDir)
-
-	return os.WriteFile(file, data, 0777)
 }

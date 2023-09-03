@@ -1,9 +1,9 @@
 module github.com/testcontainers/testcontainers-go/modules/mongodb
 
-go 1.19
+go 1.20
 
 require (
-	github.com/testcontainers/testcontainers-go v0.22.0
+	github.com/testcontainers/testcontainers-go v0.23.0
 	go.mongodb.org/mongo-driver v1.12.1
 )
 
