@@ -44,6 +44,8 @@ When starting the Localstack container, you can pass options in a variadic way t
 
 By default, the image used is `localstack:1.4.0`.  If you need to use a different image, you can use `testcontainers.WithImage` option.
 
+{% include "../features/common_functional_options.md" %}
+
 #### Customize the container request
 
 It's possible to entirely override the default LocalStack container request:

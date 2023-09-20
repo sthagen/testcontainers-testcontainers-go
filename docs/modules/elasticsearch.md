@@ -40,25 +40,7 @@ When starting the Elasticsearch container, you can pass options in a variadic wa
 If you need to set a different Elasticsearch Docker image, you can use `testcontainers.WithImage` with a valid Docker image
 for Elasticsearch. E.g. `testcontainers.WithImage("docker.elastic.co/elasticsearch/elasticsearch:8.0.0")`.
 
-#### Wait Strategies
-
-If you need to set a different wait strategy for Elasticsearch, you can use `testcontainers.WithWaitStrategy` with a valid wait strategy
-for Elasticsearch.
-
-!!!info
-    The default deadline for the wait strategy is 60 seconds.
-
-At the same time, it's possible to set a wait strategy and a custom deadline with `testcontainers.WithWaitStrategyAndDeadline`.
-
-#### Docker type modifiers
-
-If you need an advanced configuration for Elasticsearch, you can leverage the following Docker type modifiers:
-
-- `testcontainers.WithConfigModifier`
-- `testcontainers.WithHostConfigModifier`
-- `testcontainers.WithEndpointSettingsModifier`
-
-Please read the [Create containers: Advanced Settings](../features/creating_container.md#advanced-settings) documentation for more information.
+{% include "../features/common_functional_options.md" %}
 
 #### Elasticsearch password
 

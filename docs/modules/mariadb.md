@@ -53,25 +53,7 @@ for MariaDB. E.g. `testcontainers.WithImage("mariadb:11.0.3")`.
 
 The MariaDB module will take all the environment variables that start with `MARIADB_` and duplicate them with the `MYSQL_` prefix.
 
-#### Wait Strategies
-
-If you need to set a different wait strategy for MariaDB, you can use `testcontainers.WithWaitStrategy` with a valid wait strategy
-for MariaDB.
-
-!!!info
-    The default deadline for the wait strategy is 60 seconds.
-
-At the same time, it's possible to set a wait strategy and a custom deadline with `testcontainers.WithWaitStrategyAndDeadline`.
-
-#### Docker type modifiers
-
-If you need an advanced configuration for MariaDB, you can leverage the following Docker type modifiers:
-
-- `testcontainers.WithConfigModifier`
-- `testcontainers.WithHostConfigModifier`
-- `testcontainers.WithEndpointSettingsModifier`
-
-Please read the [Create containers: Advanced Settings](../features/creating_container.md#advanced-settings) documentation for more information.
+{% include "../features/common_functional_options.md" %}
 
 #### Set username, password and database name
 

@@ -79,25 +79,7 @@ You can find the Docker images that are currently tested in this module, for the
 [Docker images](../../modules/couchbase/couchbase_test.go) inside_block:dockerImages
 <!--/codeinclude-->
 
-#### Wait Strategies
-
-If you need to set a different wait strategy for Couchbase, you can use `testcontainers.WithWaitStrategy` with a valid wait strategy
-for Couchbase.
-
-!!!info
-    The default deadline for the wait strategy is 60 seconds.
-
-At the same time, it's possible to set a wait strategy and a custom deadline with `testcontainers.WithWaitStrategyAndDeadline`.
-
-#### Docker type modifiers
-
-If you need an advanced configuration for Couchbase, you can leverage the following Docker type modifiers:
-
-- `testcontainers.WithConfigModifier`
-- `testcontainers.WithHostConfigModifier`
-- `testcontainers.WithEndpointSettingsModifier`
-
-Please read the [Create containers: Advanced Settings](../features/creating_container.md#advanced-settings) documentation for more information.
+{% include "../features/common_functional_options.md" %}
 
 #### Credentials
 
