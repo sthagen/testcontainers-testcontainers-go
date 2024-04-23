@@ -3,9 +3,14 @@ package compose
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/compose-spec/compose-go/v2/cli"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -43,12 +48,38 @@ func RunServices(serviceNames ...string) StackUpOption {
 	})
 }
 
+// Deprecated: will be removed in the next major release
 // IgnoreOrphans - Ignore legacy containers for services that are not defined in the project
 type IgnoreOrphans bool
 
+// Deprecated: will be removed in the next major release
+//
 //nolint:unused
 func (io IgnoreOrphans) applyToStackUp(co *api.CreateOptions, _ *api.StartOptions) {
 	co.IgnoreOrphans = bool(io)
+}
+
+// Recreate will recreate the containers that are already running
+type Recreate string
+
+func (r Recreate) applyToStackUp(o *stackUpOptions) {
+	o.Recreate = validateRecreate(string(r))
+}
+
+// RecreateDependencies will recreate the dependencies of the services that are already running
+type RecreateDependencies string
+
+func (r RecreateDependencies) applyToStackUp(o *stackUpOptions) {
+	o.RecreateDependencies = validateRecreate(string(r))
+}
+
+func validateRecreate(r string) string {
+	switch r {
+	case api.RecreateDiverged, api.RecreateForce, api.RecreateNever:
+		return r
+	default:
+		return api.RecreateForce
+	}
 }
 
 // RemoveOrphans will clean up containers that are not declared on the compose model but own the same labels
@@ -87,6 +118,40 @@ func (ri RemoveImages) applyToStackDown(o *stackDownOptions) {
 	}
 }
 
+type ComposeStackReaders []io.Reader
+
+func (r ComposeStackReaders) applyToComposeStack(o *composeStackOptions) {
+	f := make([]string, len(r))
+	baseName := "docker-compose-%d.yml"
+	for i, reader := range r {
+		tmp := os.TempDir()
+		tmp = filepath.Join(tmp, strconv.FormatInt(time.Now().UnixNano(), 10))
+		err := os.MkdirAll(tmp, 0755)
+		if err != nil {
+			panic(err)
+		}
+
+		name := fmt.Sprintf(baseName, i)
+
+		bs, err := io.ReadAll(reader)
+		if err != nil {
+			panic(err)
+		}
+
+		err = os.WriteFile(filepath.Join(tmp, name), bs, 0644)
+		if err != nil {
+			panic(err)
+		}
+
+		f[i] = filepath.Join(tmp, name)
+
+		// mark the file for removal as it was generated on the fly
+		o.temporaryPaths[f[i]] = true
+	}
+
+	o.Paths = f
+}
+
 type ComposeStackFiles []string
 
 func (f ComposeStackFiles) applyToComposeStack(o *composeStackOptions) {
@@ -120,6 +185,9 @@ type dockerCompose struct {
 
 	// paths to stack files that will be considered when compiling the final compose project
 	configs []string
+
+	// used to remove temporary files that were generated on the fly
+	temporaryConfigs map[string]bool
 
 	// used to set logger in DockerContainer
 	logger testcontainers.Logging
@@ -186,6 +254,11 @@ func (d *dockerCompose) Down(ctx context.Context, opts ...StackDownOption) error
 	for i := range opts {
 		opts[i].applyToStackDown(&options)
 	}
+	defer func() {
+		for cfg := range d.temporaryConfigs {
+			_ = os.Remove(cfg)
+		}
+	}()
 
 	return d.composeService.Down(ctx, d.name, options.DownOptions)
 }
