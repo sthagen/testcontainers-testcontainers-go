@@ -57,9 +57,10 @@ var createContainerFailDueToNameConflictRegex = regexp.MustCompile("Conflict. Th
 // DockerContainer represents a container started using Docker
 type DockerContainer struct {
 	// Container ID from Docker
-	ID         string
-	WaitingFor wait.Strategy
-	Image      string
+	ID           string
+	WaitingFor   wait.Strategy
+	Image        string
+	exposedPorts []string // a reference to the container's requested exposed ports. It allows checking they are ready before any wait strategy
 
 	isRunning     bool
 	imageWasBuilt bool
@@ -69,7 +70,6 @@ type DockerContainer struct {
 	sessionID          string
 	terminationSignal  chan bool
 	consumers          []LogConsumer
-	raw                *types.ContainerJSON
 	logProductionError chan error
 
 	// TODO: Remove locking and wait group once the deprecated StartLogProducer and
@@ -165,12 +165,8 @@ func (c *DockerContainer) Host(ctx context.Context) (string, error) {
 	return host, nil
 }
 
-// Inspect gets the raw container info, caching the result for subsequent calls
+// Inspect gets the raw container info
 func (c *DockerContainer) Inspect(ctx context.Context) (*types.ContainerJSON, error) {
-	if c.raw != nil {
-		return c.raw, nil
-	}
-
 	jsonRaw, err := c.inspectRawContainer(ctx)
 	if err != nil {
 		return nil, err
@@ -277,7 +273,6 @@ func (c *DockerContainer) Stop(ctx context.Context, timeout *time.Duration) erro
 	defer c.provider.Close()
 
 	c.isRunning = false
-	c.raw = nil // invalidate the cache, as the container representation will change after stopping
 
 	err = c.stoppedHook(ctx)
 	if err != nil {
@@ -316,7 +311,7 @@ func (c *DockerContainer) Terminate(ctx context.Context) error {
 
 	c.sessionID = ""
 	c.isRunning = false
-	c.raw = nil // invalidate the cache here too
+
 	return errors.Join(errs...)
 }
 
@@ -328,8 +323,7 @@ func (c *DockerContainer) inspectRawContainer(ctx context.Context) (*types.Conta
 		return nil, err
 	}
 
-	c.raw = &inspect
-	return c.raw, nil
+	return &inspect, nil
 }
 
 // Logs will fetch both STDOUT and STDERR from the current container. Returns a
@@ -407,14 +401,10 @@ func (c *DockerContainer) Name(ctx context.Context) (string, error) {
 	return inspect.Name, nil
 }
 
-// State returns container's running state. This method does not use the cache
-// and always fetches the latest state from the Docker daemon.
+// State returns container's running state.
 func (c *DockerContainer) State(ctx context.Context) (*types.ContainerState, error) {
 	inspect, err := c.inspectRawContainer(ctx)
 	if err != nil {
-		if c.raw != nil {
-			return c.raw.State, err
-		}
 		return nil, err
 	}
 	return inspect.State, nil
@@ -866,7 +856,7 @@ type DockerProvider struct {
 	client    client.APIClient
 	host      string
 	hostCache string
-	config    TestcontainersConfig
+	config    config.Config
 }
 
 // Client gets the docker client used by the provider
@@ -982,12 +972,10 @@ func (p *DockerProvider) CreateContainer(ctx context.Context, req ContainerReque
 		req.Labels = make(map[string]string)
 	}
 
-	tcConfig := p.Config().Config
-
 	var termSignal chan bool
 	// the reaper does not need to start a reaper for itself
 	isReaperContainer := strings.HasSuffix(imageName, config.ReaperDefaultImage)
-	if !tcConfig.RyukDisabled && !isReaperContainer {
+	if !p.config.RyukDisabled && !isReaperContainer {
 		r, err := reuseOrCreateReaper(context.WithValue(ctx, core.DockerHostContextKey, p.host), core.SessionID(), p)
 		if err != nil {
 			return nil, fmt.Errorf("%w: creating reaper failed", err)
@@ -1010,7 +998,7 @@ func (p *DockerProvider) CreateContainer(ctx context.Context, req ContainerReque
 	}
 
 	// always append the hub substitutor after the user-defined ones
-	req.ImageSubstitutors = append(req.ImageSubstitutors, newPrependHubRegistry(tcConfig.HubImageNamePrefix))
+	req.ImageSubstitutors = append(req.ImageSubstitutors, newPrependHubRegistry(p.config.HubImageNamePrefix))
 
 	var platform *specs.Platform
 
@@ -1154,6 +1142,7 @@ func (p *DockerProvider) CreateContainer(ctx context.Context, req ContainerReque
 		imageWasBuilt:     req.ShouldBuildImage(),
 		keepBuiltImage:    req.ShouldKeepBuiltImage(),
 		sessionID:         core.SessionID(),
+		exposedPorts:      req.ExposedPorts,
 		provider:          p,
 		terminationSignal: termSignal,
 		logger:            p.Logger,
@@ -1231,10 +1220,8 @@ func (p *DockerProvider) ReuseOrCreateContainer(ctx context.Context, req Contain
 
 	sessionID := core.SessionID()
 
-	tcConfig := p.Config().Config
-
 	var termSignal chan bool
-	if !tcConfig.RyukDisabled {
+	if !p.config.RyukDisabled {
 		r, err := reuseOrCreateReaper(context.WithValue(ctx, core.DockerHostContextKey, p.host), sessionID, p)
 		if err != nil {
 			return nil, fmt.Errorf("%w: creating reaper failed", err)
@@ -1257,6 +1244,7 @@ func (p *DockerProvider) ReuseOrCreateContainer(ctx context.Context, req Contain
 		WaitingFor:        req.WaitingFor,
 		Image:             c.Image,
 		sessionID:         sessionID,
+		exposedPorts:      req.ExposedPorts,
 		provider:          p,
 		terminationSignal: termSignal,
 		logger:            p.Logger,
@@ -1344,7 +1332,14 @@ func (p *DockerProvider) RunContainer(ctx context.Context, req ContainerRequest)
 // Config provides the TestcontainersConfig read from $HOME/.testcontainers.properties or
 // the environment variables
 func (p *DockerProvider) Config() TestcontainersConfig {
-	return p.config
+	return TestcontainersConfig{
+		Host:           p.config.Host,
+		TLSVerify:      p.config.TLSVerify,
+		CertPath:       p.config.CertPath,
+		RyukDisabled:   p.config.RyukDisabled,
+		RyukPrivileged: p.config.RyukPrivileged,
+		Config:         p.config,
+	}
 }
 
 // DaemonHost gets the host or ip of the Docker daemon where ports are exposed on
@@ -1415,8 +1410,6 @@ func (p *DockerProvider) CreateNetwork(ctx context.Context, req NetworkRequest) 
 		req.Labels = make(map[string]string)
 	}
 
-	tcConfig := p.Config().Config
-
 	nc := network.CreateOptions{
 		Driver:     req.Driver,
 		Internal:   req.Internal,
@@ -1429,7 +1422,7 @@ func (p *DockerProvider) CreateNetwork(ctx context.Context, req NetworkRequest) 
 	sessionID := core.SessionID()
 
 	var termSignal chan bool
-	if !tcConfig.RyukDisabled {
+	if !p.config.RyukDisabled {
 		r, err := reuseOrCreateReaper(context.WithValue(ctx, core.DockerHostContextKey, p.host), sessionID, p)
 		if err != nil {
 			return nil, fmt.Errorf("%w: creating network reaper failed", err)
@@ -1575,13 +1568,13 @@ func containerFromDockerResponse(ctx context.Context, response types.Container) 
 	ctr.terminationSignal = nil
 
 	// populate the raw representation of the container
-	_, err = ctr.inspectRawContainer(ctx)
+	jsonRaw, err := ctr.inspectRawContainer(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// the health status of the container, if any
-	if health := ctr.raw.State.Health; health != nil {
+	if health := jsonRaw.State.Health; health != nil {
 		ctr.healthStatus = health.Status
 	}
 

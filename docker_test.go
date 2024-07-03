@@ -1338,11 +1338,6 @@ func TestContainerInspect_RawInspectIsCleanedOnStop(t *testing.T) {
 	assert.NotEmpty(t, inspect.ID)
 
 	require.NoError(t, ctr.Stop(context.Background(), nil))
-
-	// type assertion to ensure that the container is a DockerContainer
-	dc := ctr.(*DockerContainer)
-
-	assert.Nil(t, dc.raw)
 }
 
 func readHostname(tb testing.TB, containerId string) string {
@@ -1896,16 +1891,6 @@ func TestGetGatewayIP(t *testing.T) {
 	if ip == "" {
 		t.Fatal("could not get gateway ip")
 	}
-}
-
-func TestProviderHasConfig(t *testing.T) {
-	provider, err := NewDockerProvider(WithLogger(TestLogger(t)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer provider.Close()
-
-	assert.NotNil(t, provider.Config(), "expecting DockerProvider to provide the configuration")
 }
 
 func TestNetworkModeWithContainerReference(t *testing.T) {
