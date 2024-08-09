@@ -221,38 +221,43 @@ func (c *DockerContainer) SessionID() string {
 func (c *DockerContainer) Start(ctx context.Context) error {
 	err := c.startingHook(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("starting hook: %w", err)
 	}
 
 	if err := c.provider.client.ContainerStart(ctx, c.ID, container.StartOptions{}); err != nil {
-		return err
+		return fmt.Errorf("container start: %w", err)
 	}
 	defer c.provider.Close()
 
 	err = c.startedHook(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("started hook: %w", err)
 	}
 
 	c.isRunning = true
 
 	err = c.readiedHook(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("readied hook: %w", err)
 	}
 
 	return nil
 }
 
-// Stop will stop an already started container
+// Stop stops the container.
 //
-// In case the container fails to stop
-// gracefully within a time frame specified by the timeout argument,
-// it is forcefully terminated (killed).
+// In case the container fails to stop gracefully within a time frame specified
+// by the timeout argument, it is forcefully terminated (killed).
 //
 // If the timeout is nil, the container's StopTimeout value is used, if set,
 // otherwise the engine default. A negative timeout value can be specified,
 // meaning no timeout, i.e. no forceful termination is performed.
+//
+// All hooks are called in the following order:
+//   - [ContainerLifecycleHooks.PreStops]
+//   - [ContainerLifecycleHooks.PostStops]
+//
+// If the container is already stopped, the method is a no-op.
 func (c *DockerContainer) Stop(ctx context.Context, timeout *time.Duration) error {
 	err := c.stoppingHook(ctx)
 	if err != nil {
@@ -1086,7 +1091,7 @@ func (p *DockerProvider) CreateContainer(ctx context.Context, req ContainerReque
 	// default hooks include logger hook and pre-create hook
 	defaultHooks := []ContainerLifecycleHooks{
 		DefaultLoggingHook(p.Logger),
-		defaultPreCreateHook(ctx, p, req, dockerInput, hostConfig, networkingConfig),
+		defaultPreCreateHook(p, dockerInput, hostConfig, networkingConfig),
 		defaultCopyFileToContainerHook(req.Files),
 		defaultLogConsumersHook(req.LogConsumerCfg),
 		defaultReadinessHook(),
