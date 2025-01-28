@@ -226,7 +226,7 @@ func (c *ContainerRequest) Validate() error {
 // GetContext retrieve the build context for the request
 // Must be closed when no longer needed.
 func (c *ContainerRequest) GetContext() (io.Reader, error) {
-	var includes []string = []string{"."}
+	includes := []string{"."}
 
 	if c.ContextArchive != nil {
 		return c.ContextArchive, nil
@@ -529,9 +529,8 @@ func (c *ContainerRequest) validateMounts() error {
 		targetPath := m.Target.Target()
 		if targets[targetPath] {
 			return fmt.Errorf("%w: %s", ErrDuplicateMountTarget, targetPath)
-		} else {
-			targets[targetPath] = true
 		}
+		targets[targetPath] = true
 	}
 
 	if c.HostConfigModifier == nil {
@@ -551,9 +550,8 @@ func (c *ContainerRequest) validateMounts() error {
 			targetPath := parts[1]
 			if targets[targetPath] {
 				return fmt.Errorf("%w: %s", ErrDuplicateMountTarget, targetPath)
-			} else {
-				targets[targetPath] = true
 			}
+			targets[targetPath] = true
 		}
 	}
 
