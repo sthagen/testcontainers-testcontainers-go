@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.23.6
 
 require (
-	github.com/cenkalti/backoff/v4 v4.2.1
+	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/couchbase/gocb/v2 v2.7.2
 	github.com/docker/go-connections v0.5.0
 	github.com/stretchr/testify v1.10.0
