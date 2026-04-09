@@ -2,7 +2,7 @@ module github.com/testcontainers/testcontainers-go/modules/gcloud
 
 go 1.25.0
 
-toolchain go1.25.7
+toolchain go1.25.9
 
 require (
 	cloud.google.com/go/bigquery v1.59.1
@@ -12,7 +12,7 @@ require (
 	cloud.google.com/go/pubsub v1.36.2
 	cloud.google.com/go/spanner v1.57.0
 	github.com/stretchr/testify v1.11.1
-	github.com/testcontainers/testcontainers-go v0.41.0
+	github.com/testcontainers/testcontainers-go v0.42.0
 	google.golang.org/api v0.169.0
 	google.golang.org/grpc v1.79.3
 )
@@ -56,7 +56,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect

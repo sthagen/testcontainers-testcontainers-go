@@ -2,12 +2,12 @@ module github.com/testcontainers/testcontainers-go/modules/k3s
 
 go 1.25.0
 
-toolchain go1.25.7
+toolchain go1.25.9
 
 require (
 	github.com/moby/moby/api v1.54.1
 	github.com/stretchr/testify v1.11.1
-	github.com/testcontainers/testcontainers-go v0.41.0
+	github.com/testcontainers/testcontainers-go v0.42.0
 	go.yaml.in/yaml/v3 v3.0.4
 	k8s.io/api v0.29.2
 	k8s.io/apimachinery v0.29.2
@@ -46,7 +46,7 @@ require (
 	github.com/imdario/mergo v0.3.13 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect

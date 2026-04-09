@@ -2,13 +2,13 @@ module github.com/testcontainers/testcontainers-go/modules/pulsar
 
 go 1.25.0
 
-toolchain go1.25.7
+toolchain go1.25.9
 
 require (
 	github.com/apache/pulsar-client-go v0.14.0
 	github.com/moby/moby/api v1.54.1
 	github.com/stretchr/testify v1.11.1
-	github.com/testcontainers/testcontainers-go v0.41.0
+	github.com/testcontainers/testcontainers-go v0.42.0
 )
 
 replace github.com/testcontainers/testcontainers-go => ../..
@@ -51,7 +51,7 @@ require (
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
