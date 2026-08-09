@@ -1010,7 +1010,7 @@ func (c *DockerContainer) connectReaper(ctx context.Context) error {
 		return nil
 	}
 
-	reaper, err := spawner.reaper(context.WithValue(ctx, core.DockerHostContextKey, c.provider.host), core.SessionID(), c.provider)
+	reaper, err := spawner.reaper(context.WithValue(ctx, core.DockerHostContextKey, c.provider.host), c.provider.config.SessionID, c.provider)
 	if err != nil {
 		return fmt.Errorf("reaper: %w", err)
 	}
@@ -1382,7 +1382,7 @@ func (p *DockerProvider) findContainerByName(ctx context.Context, name string) (
 	// Note that, 'name' filter will use regex to find the containers
 	containers, err := p.client.ContainerList(ctx, client.ContainerListOptions{
 		All:     true,
-		Filters: make(client.Filters).Add("name", fmt.Sprintf("^%s$", name)),
+		Filters: make(client.Filters).Add("name", fmt.Sprintf("^%s$", regexp.QuoteMeta(name))),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("container list: %w", err)
